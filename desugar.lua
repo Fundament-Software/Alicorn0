@@ -76,6 +76,8 @@ type SemanticNode :
     inputlinks = (Buffer (tuple (Rc this-type) u32))
     operation = SemanticOp
 
+
+
 type Operator :
   tuple
     args = ArgumentTypes
@@ -96,6 +98,20 @@ interface SyntaxProcessor
   next : ((Result Expr (tuple SyntaxError this-type)) <-: (this-type))
 ]]
 
+local function new_syntaxerror(msg, anchor, propagation)
+  return {
+    msg = msg,
+    anchor = anchor,
+    propagation
+  }
+end
+
+local Expr = {
+  poison = function(err)
+    return {kind = "poison", err = err}
+  end
+}
+
 local Result = {
   ok = function(val)
     return {kind = "ok", val}
@@ -104,6 +120,12 @@ local Result = {
     return {kind = "err", val}
   end
 }
+
+local literal_operator = {}
+
+local function literal_to_expr(syntaxliteral)
+  return Expr.poison(new_syntaxerror("NYI literals", syntaxliteral.anchor)
+end
 
 local SyntaxProcessor_mt = {
   __index = {
@@ -115,6 +137,18 @@ local SyntaxProcessor_mt = {
           topiter:advance()
           if head.kind == "symbol" then
             local headexpr = scope:getsym(head.string)
+            if not headexpr then
+              local err = new_syntaxerror("symbol " .. head.string .. " is not bound in scope", head.anchor)
+              table.insert(self.exprstack[#self.exprstack], Expr.poison(err))
+              return Result.err{err, self}
+            end
+            table.insert(self.exprstack[#self.exprstack], headexpr)
+          elseif head.kind == "literal" then
+
+
+            if #self.exprstack[#self.exprstack] == 0 then
+
+
         else
           table.remove(self.syntaxstack, -1)
 
