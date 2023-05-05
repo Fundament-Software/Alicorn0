@@ -1,0 +1,95 @@
+{
+  "nodes": {
+    "flake-utils": {
+      "locked": {
+        "lastModified": 1667395993,
+        "narHash": "sha256-nuEHfE/LcWyuSWnS8t12N1wc105Qtau+/OdUAjtQ0rA=",
+        "owner": "numtide",
+        "repo": "flake-utils",
+        "rev": "5aed5285a952e0b949eb3ba02c12fa4fcfef535f",
+        "type": "github"
+      },
+      "original": {
+        "owner": "numtide",
+        "repo": "flake-utils",
+        "type": "github"
+      }
+    },
+    "luvit": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1642649424,
+        "narHash": "sha256-TNiD6GPnS8O2d53sJ52xWYqMAXrVJu2lkfXhf2jWuL0=",
+        "owner": "luvit",
+        "repo": "luvit",
+        "rev": "3f328ad928eb214f6438dd25fb9ee8b5c1e9255c",
+        "type": "github"
+      },
+      "original": {
+        "owner": "luvit",
+        "repo": "luvit",
+        "type": "github"
+      }
+    },
+    "luvitpkgs": {
+      "inputs": {
+        "luvit": "luvit",
+        "nixpkgs": "nixpkgs"
+      },
+      "locked": {
+        "lastModified": 1651805603,
+        "narHash": "sha256-C50I+sDqwyMMdmDUZfplo8AN8HmFdssnwkgBFuZCRrk=",
+        "owner": "aiverson",
+        "repo": "luvit-nix",
+        "rev": "86e7e526b9caedcb89cc6c4fdd68629f9a546676",
+        "type": "github"
+      },
+      "original": {
+        "owner": "aiverson",
+        "repo": "luvit-nix",
+        "type": "github"
+      }
+    },
+    "nixpkgs": {
+      "locked": {
+        "lastModified": 1659446231,
+        "narHash": "sha256-hekabNdTdgR/iLsgce5TGWmfIDZ86qjPhxDg/8TlzhE=",
+        "owner": "nixos",
+        "repo": "nixpkgs",
+        "rev": "eabc38219184cc3e04a974fe31857d8e0eac098d",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nixos",
+        "ref": "nixos-21.11",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "nixpkgs_2": {
+      "locked": {
+        "lastModified": 1674781052,
+        "narHash": "sha256-nseKFXRvmZ+BDAeWQtsiad+5MnvI/M2Ak9iAWzooWBw=",
+        "owner": "nixos",
+        "repo": "nixpkgs",
+        "rev": "cc4bb87f5457ba06af9ae57ee4328a49ce674b1b",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nixos",
+        "ref": "nixos-22.11",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "root": {
+      "inputs": {
+        "flake-utils": "flake-utils",
+        "luvitpkgs": "luvitpkgs",
+        "nixpkgs": "nixpkgs_2"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}
