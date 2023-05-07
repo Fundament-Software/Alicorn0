@@ -1,12 +1,13 @@
 
 
-local env_mt = {
+local env_mt
+env_mt = {
   __add = function(self, other)
     local res = {}
-    for k, v in pairs(self) do
+    for k, v in pairs(self.dict) do
       res[k] = v
     end
-    for k, v in pairs(other) do
+    for k, v in pairs(other.dict) do
       if res[k] ~= nil then
         error("names in environments being merged must be disjoint, but both environments have " .. k)
       end
@@ -18,7 +19,16 @@ local env_mt = {
     get = function(self, name)
       return self.dict[name]
     end
-  }
+  },
+  __tostring = function(self)
+    local message = "env{"
+    local fields = {}
+    for k, v in pairs(self.dict) do
+      fields[#fields + 1] = tostring(k) .. " = " .. tostring(v)
+    end
+    message = message .. table.concat(fields, ", ") .. "}"
+    return message
+  end
 }
 
 local function newenv(dict)
@@ -27,7 +37,7 @@ end
 
 local syntax_check_reductions = {}
 
-local function symbolenvhandler(name, env)
+local function symbolenvhandler(env, name)
   --print("symbolenvhandler(", name, env, ")")
   local res = env:get(name)
   if res ~= nil then
@@ -37,10 +47,18 @@ local function symbolenvhandler(name, env)
   end
 end
 
-local function accept_handler(value, data)
-  return true, value
+local function symbolexacthandler(expected, name)
+  if name == expected then
+    return true
+  else
+    return false, "symbol is expected to be exactly " .. expected .. " but was instead " .. name
+  end
 end
-local function failure_handler(exception, data)
+
+local function accept_handler(data, ...)
+  return true, ...
+end
+local function failure_handler(data, exception)
   return false, exception
 end
 
@@ -52,6 +70,19 @@ function syntax_check_reductions.SymbolInEnvironment(syntax, matcher)
         kind = "Symbol",
         handler = symbolenvhandler
       },
+    },
+    failure_handler,
+    matcher[1]
+  )
+end
+
+function syntax_check_reductions.SymbolExact(syntax, matcher)
+  return syntax:match(
+    {
+      {
+        kind = "Symbol",
+        handler = symbolexacthandler
+      }
     },
     failure_handler,
     matcher[1]
@@ -96,20 +127,20 @@ local constructed_syntax_mt = {
           return self.accepters[matcher.kind](self, matcher, extra)
         elseif syntax_check_reductions[matcher.kind] then
           --print("trying syntax reduction on kind", matcher.kind)
-          local ok, res = syntax_check_reductions[matcher.kind](self, matcher)
-          if ok then
+          local res = {syntax_check_reductions[matcher.kind](self, matcher)}
+          if res[1] then
             --print("accepted syntax reduction")
             if not matcher.handler then
               print("missing handler for ", matcher.kind, debug.traceback())
             end
-            return matcher.handler(res, extra)
+            return matcher.handler(extra, table.unpack(res, 2))
           end
           --print("rejected syntax reduction")
           lasterr = res
         end
         --print("rejected syntax kind", matcher.kind)
       end
-      return unmatched(syntax_error(matchers, self.anchor, lasterr), extra)
+      return unmatched(extra, syntax_error(matchers, self.anchor, lasterr))
     end
   }
 }
@@ -119,7 +150,7 @@ end
 
 local pair_accepters = {
   Pair = function(self, matcher, extra)
-    return matcher.handler(self[1], self[2], extra)
+    return matcher.handler(extra, self[1], self[2])
   end
 }
 
@@ -129,7 +160,7 @@ end
 
 local symbol_accepters = {
   Symbol = function(self, matcher, extra)
-    return matcher.handler(self[1], extra)
+    return matcher.handler(extra, self[1])
   end
 }
 
@@ -139,7 +170,7 @@ end
 
 local value_accepters = {
   Value = function(self, matcher, extra)
-    return matcher.handler(self[1], extra)
+    return matcher.handler(extra, self[1])
   end
 }
 
@@ -181,11 +212,12 @@ local vau_mt = {
 
 local eval
 
-local function eval_passhandler(val, env)
+local function eval_passhandler(env, val)
+  --print("eval pass handler", val, env)
   return true, val, env
 end
 
-local function eval_pairhandler(a, b, env)
+local function eval_pairhandler(env, a, b)
   --print("in eval pairhandler", a, b, env)
   local ok, combiner, _ =
     a:match(
@@ -197,10 +229,12 @@ local function eval_pairhandler(a, b, env)
         },
       },
       failure_handler,
-      nil
+      env
     )
   if not ok then return false, combiner end
-  return combiner:apply(b, env)
+  local ok, val, newenv = combiner:apply(b, env)
+  --print("eval pair", ok, val, newenv)
+  return ok, val, newenv
 end
 
 function eval(syntax, environment)
@@ -230,11 +264,11 @@ function syntax_check_reductions.Eval(syntax, matcher)
 end
 
 
-local function syntax_args_val_handler(val)
-  return true, val
+local function syntax_args_val_handler(_, val, newenv)
+  return true, val, newenv
 end
 
-local function syntax_args_pair_handler(a, b, env)
+local function syntax_args_pair_handler(env, a, b)
   local ok, val, _ =
     a:match(
       {
@@ -247,6 +281,7 @@ local function syntax_args_pair_handler(a, b, env)
       failure_handler,
       nil
     )
+  --print("args pair handler", ok, val, _, b)
   return true, true, val, b
 end
 
@@ -254,7 +289,7 @@ local function syntax_args_nil_handler(data)
   return true, false
 end
 
-function syntax_check_reductions.EvalArgs(syntax, env)
+function syntax_check_reductions.EvalArgs(syntax, matcher)
   local args = {}
   local ok, ispair, val, tail = true, true, nil, nil
   while ok and ispair do
@@ -271,7 +306,7 @@ function syntax_check_reductions.EvalArgs(syntax, env)
           }
         },
         failure_handler,
-        env
+        matcher[1]
       )
     if not ok then return false, ispair end
     if ispair then
@@ -280,6 +315,49 @@ function syntax_check_reductions.EvalArgs(syntax, env)
     end
   end
   return true, args
+end
+
+
+local function list_match_pair_handler(rule, a, b)
+  --print("list pair handler", a, b, rule)
+  local ok, val = a:match({rule}, failure_handler, nil)
+  return ok, val, b
+end
+
+
+function syntax_check_reductions.ListMatch(syntax, matcher)
+  local args = {}
+  local ok, val, tail = true, true, nil
+  for i, rule in ipairs(matcher) do
+    ok, val, tail =
+      syntax:match(
+        {
+          {
+            kind = "Pair",
+            handler = list_match_pair_handler,
+          }
+        },
+        failure_handler,
+        rule
+      )
+    --print("list match rule", ok, val, tail)
+    if not ok then return false, val end
+    args[#args + 1] = val
+    syntax = tail
+  end
+  ok, err =
+    syntax:match(
+      {
+        {
+          kind = "Nil",
+          handler = accept_handler
+        }
+      },
+      failure_handler,
+      nil
+    )
+  if not ok then return false, err end
+  return true, table.unpack(args)
 end
 
 local primitive_applicative_mt = {
@@ -307,6 +385,17 @@ local function primitive_applicative(fn)
   return setmetatable({fn = fn}, primitive_applicative_mt)
 end
 
+local primitive_operative_mt = {
+  __index = {
+    apply = function(self, ops, env)
+      return self.fn(ops, env)
+    end
+  }
+}
+
+local function primitive_operative(fn)
+  return setmetatable({fn = fn}, primitive_operative_mt)
+end
 
 return {
   newenv = newenv,
@@ -319,4 +408,5 @@ return {
   nilval = nilval,
   eval = eval,
   primitive_applicative = primitive_applicative,
+  primitive_operative = primitive_operative
 }
