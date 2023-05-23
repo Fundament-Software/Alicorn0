@@ -19,6 +19,14 @@ env_mt = {
     get = function(self, name)
       return self.dict[name]
     end
+    without = function(self, name)
+      local res = {}
+      for k, v in pairs(self.dict) do
+        if k ~= name then
+          res[k] = v
+        end
+      end
+      return setmetatable({dict = res}, env_mt)
   },
   __tostring = function(self)
     local message = "env{"
