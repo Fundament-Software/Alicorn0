@@ -18,7 +18,7 @@ env_mt = {
   __index = {
     get = function(self, name)
       return self.dict[name]
-    end
+    end,
     without = function(self, name)
       local res = {}
       for k, v in pairs(self.dict) do
@@ -27,6 +27,7 @@ env_mt = {
         end
       end
       return setmetatable({dict = res}, env_mt)
+    end
   },
   __tostring = function(self)
     local message = "env{"
