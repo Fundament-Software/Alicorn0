@@ -71,7 +71,7 @@ environment_mt = {
         local locals = self.locals
         local typechecking_context = self.typechecking_context
         for i, v in ipairs(names) do
-          local constructor, arg = decls:unwrap_data_value()
+          local constructor, arg = decls:unwrap_enum_value()
           if constructor ~= "cons" then
             error("todo: this error message")
           end

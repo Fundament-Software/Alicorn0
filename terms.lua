@@ -200,6 +200,7 @@ runtime_context_mt = {
       return self.bindings:get(index)
     end,
     append = function(self, value)
+      -- TODO: typecheck
       local copy = { bindings = self.bindings:append(value) }
       return setmetatable(copy, runtime_context_mt)
     end
@@ -227,6 +228,10 @@ typechecking_context_mt = {
       return self.runtime_context
     end,
     append = function(self, name, type, val) -- value is optional
+      -- TODO: typecheck
+      if name == nil or type == nil then
+        error("bug!!!")
+      end
       local copy = {
         bindings = self.bindings:append({name = name, type = type}),
         runtime_context = self.runtime_context:append(val or value.neutral(neutral_value.free(free.placeholder(#self + 1)))),
@@ -274,6 +279,7 @@ checkable_term:define_enum("checkable", {
     "param_name", gen.builtin_string,
     "body", checkable_term,
   }},
+  -- TODO: enum_cons
 })
 -- inferrable terms can have their type inferred / don't need a target type
 inferrable_term:define_enum("inferrable", {
@@ -312,6 +318,20 @@ inferrable_term:define_enum("inferrable", {
     "subject", inferrable_term,
     "field_names", array(gen.builtin_string),
     "body", inferrable_term,
+  }},
+  {"enum_cons", {
+    "enum_type", value,
+    "constructor", gen.builtin_string,
+    "arg", inferrable_term,
+  }},
+  {"enum_elim", {
+    "subject", inferrable_term,
+    "mechanism", inferrable_term,
+  }},
+  {"object_cons", {"methods", map(gen.builtin_string, inferrable_term)}},
+  {"object_elim", {
+    "subject", inferrable_term,
+    "mechanism", inferrable_term,
   }},
   {"let", {
     "name", gen.builtin_string,
@@ -408,23 +428,23 @@ typed_term:define_enum("typed", {
     "body", typed_term,
   }},
   --TODO record elim
-  {"data_cons", {
+  {"enum_cons", {
     "constructor", gen.builtin_string,
     "arg", typed_term,
   }},
-  {"data_elim", {
+  {"enum_elim", {
     "subject", typed_term,
-    "body", typed_term,
+    "mechanism", typed_term,
   }},
-  {"data_rec_elim", {
+  {"enum_rec_elim", {
     "subject", typed_term,
-    "body", typed_term,
+    "mechanism", typed_term,
   }},
   {"object_cons", {"methods", map(gen.builtin_string, typed_term)}},
   {"object_corec_cons", {"methods", map(gen.builtin_string, typed_term)}},
   {"object_elim", {
     "subject", typed_term,
-    "body", typed_term,
+    "mechanism", typed_term,
   }},
   {"operative_cons", {"userdata", typed_term}},
   {"operative_type_cons", {
@@ -560,18 +580,21 @@ value:define_enum("value", {
   -- ordinary data
   {"tuple_value", {"elements", array(value)}},
   {"tuple_type", {"decls", value}},
-  {"data_value", {
+  {"enum_value", {
     "constructor", gen.builtin_string,
     "arg", value,
   }},
-  {"data_type", {"decls", value}},
+  {"enum_type", {"decls", value}},
   {"record_value", {"fields", map(gen.builtin_string, value)}},
   {"record_type", {"decls", value}},
   {"record_extend_stuck", {
     "base", neutral_value,
     "extension", map(gen.builtin_string, value),
   }},
-  {"object_value", {"methods", map(gen.builtin_string, value)}},
+  {"object_value", {
+    "methods", map(gen.builtin_string, typed_term),
+    "capture", runtime_context_type,
+  }},
   {"object_type", {"decls", value}},
   {"level_type"},
   {"number_type"},
@@ -617,16 +640,16 @@ neutral_value:define_enum("neutral_value", {
     "f", neutral_value,
     "arg", value,
   }},
-  {"data_elim_stuck", {
-    "handler", value,
+  {"enum_elim_stuck", {
+    "mechanism", value,
     "subject", neutral_value,
   }},
-  {"data_rec_elim_stuck", {
+  {"enum_rec_elim_stuck", {
     "handler", value,
     "subject", neutral_value,
   }},
   {"object_elim_stuck", {
-    "method", value,
+    "mechanism", value,
     "subject", neutral_value,
   }},
   {"tuple_element_access_stuck", {
@@ -668,8 +691,8 @@ local prim_inferrable_term_type = value.prim_user_defined_type({name = "inferrab
 local prim_lua_error_type = value.prim_user_defined_type({name = "lua_error_type"}, array(value)())
 
 local function tup_val(...) return value.tuple_value(array(value)(...)) end
-local function cons(...) return value.data_value("cons", tup_val(...)) end
-local empty = value.data_value("empty", tup_val())
+local function cons(...) return value.enum_value("cons", tup_val(...)) end
+local empty = value.enum_value("empty", tup_val())
 local unit_type = value.tuple_type(empty)
 local unit_val = tup_val()
 

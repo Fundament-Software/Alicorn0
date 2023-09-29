@@ -61,6 +61,7 @@ end
 
 local function get_level(t)
   -- TODO: this
+  -- TODO: typecheck
   return 0
 end
 
@@ -219,7 +220,7 @@ local value_fitsinto = fitsinto_trait:get(terms.value).fitsinto
 -- if a fits into b / a can be cast to b / b > a
 function fitsinto(a, b)
 	if getmetatable(a) ~= terms.value or getmetatable(b) ~= terms.value then
-		error("fitsinto should only be called on values")
+		error("fitsinto should only be called on alicorn values")
 	end
   if a == b then return true end
 	return value_fitsinto(a, b)
@@ -324,11 +325,15 @@ local function check(
     typechecking_context, -- todo
     target_type) -- must be unify with target type (there is some way we can assign metavariables to make them equal)
   -- -> type of that term, usage counts, a typed term
-  -- TODO: typecheck checkable_term and typechecking_context and target_type?
-
-	if not terms.checkable_term.value_check(checkable_term) then error "tried to check something that isn't a checkable term" end
-	if not terms.typechecking_context_type.value_check(typechecking_context) then error "tried to check with a context that isn't a typechecking context" end
-	if not terms.value.value_check(target_type) then error "tried to check with a target type that isn't an alicorn value" end
+  if terms.checkable_term.value_check(checkable_term) ~= true then
+    error("check, checkable_term: expected a checkable term")
+  end
+  if terms.typechecking_context_type.value_check(typechecking_context) ~= true then
+    error("check, typechecking_context: expected a typechecking context")
+  end
+  if terms.value.value_check(target_type) ~= true then
+    error("check, target_type: expected a target type (as an alicorn value)")
+  end
 
   if checkable_term:is_inferrable() then
     local inferrable_term = checkable_term:unwrap_inferrable()
@@ -360,8 +365,12 @@ local function check(
 end
 
 function apply_value(f, arg)
-	if not terms.value.value_check(f) then error "tried to apply something that wasn't an alicorn value" end
-	if not terms.value.value_check(arg) then error "tried to apply a function to something that wasn't an alicorn value" end
+  if terms.value.value_check(f) ~= true then
+    error("apply_value, f: expected an alicorn value")
+  end
+  if terms.value.value_check(arg) ~= true then
+    error("apply_value, arg: expected an alicorn value")
+  end
 
   if f:is_closure() then
     local code, capture = f:unwrap_closure()
@@ -376,24 +385,26 @@ function apply_value(f, arg)
     elseif arg:is_neutral() then
       return value.neutral(neutral_value.prim_application_stuck(primitive_value, arg:unwrap_neutral()))
     else
-      error("apply_value: trying to apply a primitive function on a non-primitive value")
+      error("apply_value, is_prim, arg: expected a prim tuple argument")
     end
   else
     p(f)
-    error("apply_value: trying to apply function application to something that isn't a function/closure")
+    error("apply_value, f: expected a function/closure")
   end
 
   error("unreachable!?")
 end
 
 local function eq_prim_tuple_value_decls(left, right, typechecking_context)
-  if left.constructor == "empty" and right.constructor == "empty" then
+  local lcons, larg = left:unwrap_enum_value()
+  local rcons, rarg = right:unwrap_enum_value()
+  if lcons == "empty" and rcons == "empty" then
     return typechecking_context
-  elseif left.constructor == "empty" or right.constructor == "empty" then
+  elseif lcons == "empty" or rcons == "empty" then
     error("eq_prim_tuple_value_decls: mismatch in number of expected and given args in primitive function application")
-  elseif left.constructor == "cons" and right.constructor == "cons" then
-    local left_details = left.arg.elements
-    local right_details = right.arg.elements
+  elseif lcons == "cons" and rcons == "cons" then
+    local left_details = larg.elements
+    local right_details = rarg.elements
     local context = eq_prim_tuple_value_decls(left_details[1], right_details[1], typechecking_context)
     local left_f = left_details[2]
     local right_f = right_details[2]
@@ -421,25 +432,17 @@ local function eq_prim_tuple_value_decls(left, right, typechecking_context)
   error("unreachable!?")
 end
 
-local function closure_equivalence(a, b)
-  if not a:is_closure() and b:is_closure() then error "both arguments must be closures" end
-  if a == b then return true end
-  local arg = terms.value.neutral(terms.neutral_value.free(terms.free.unique({})))
-  local a_res = apply_value(a, arg)
-  local b_res = apply_value(b, arg)
-  return a_res == b_res
-  --TODO: recursively check equivalence in resulting values
-end
-
 function infer(
     inferrable_term, -- constructed from inferrable
     typechecking_context -- todo
     )
   -- -> type of term, usage counts, a typed term,
-  -- TODO: typecheck inferrable_term and typechecking_context?
-
-	if not terms.inferrable_term.value_check(inferrable_term) then error "tried to infer something that wasn't an inferable term" end
-	if not terms.typechecking_context_type.value_check(typechecking_context) then error "tried to infer in a context that wasn't a typechecking context" end
+  if terms.inferrable_term.value_check(inferrable_term) ~= true then
+    error("infer, inferrable_term: expected an inferrable term")
+  end
+  if terms.typechecking_context_type.value_check(typechecking_context) ~= true then
+    error("infer, typechecking_context: expected a typechecking context")
+  end
 
   if inferrable_term:is_bound_variable() then
     local index = inferrable_term:unwrap_bound_variable()
@@ -530,21 +533,21 @@ function infer(
       return f_result_type, application_usages, application
     else
       p(f_type)
-      error("infer: trying to apply function application to something whose type isn't a function type")
+      error("infer, is_application, f_type: expected a term with a function type")
     end
   elseif inferrable_term:is_tuple_cons() then
     local elements = inferrable_term:unwrap_tuple_cons()
     -- type_data is either "empty", an empty tuple,
     -- or "cons", a tuple with the previous type_data and a function that
     -- takes all previous values and produces the type of the next element
-    local type_data = value.data_value("empty", tup_val())
+    local type_data = value.enum_value("empty", tup_val())
     local usages = usage_array()
     local new_elements = typed_array()
     for _, v in ipairs(elements) do
       local e_type, e_usages, e_term = infer(v, typechecking_context)
 
       local new_type_elements = value_array(type_data, substitute_type_variables(e_type, #typechecking_context + 1, 0))
-      type_data = value.data_value("cons", value.tuple_value(new_type_elements))
+      type_data = value.enum_value("cons", value.tuple_value(new_type_elements))
 
       add_arrays(usages, e_usages)
       new_elements:append(e_term)
@@ -557,14 +560,14 @@ function infer(
     -- or "cons", a tuple with the previous type_data and a function that
     -- takes all previous values and produces the type of the next element
     -- TODO: it is a type error to put something that isn't a prim into a prim tuple
-    local type_data = value.data_value("empty", tup_val())
+    local type_data = value.enum_value("empty", tup_val())
     local usages = usage_array()
     local new_elements = typed_array()
     for _, v in ipairs(elements) do
       local e_type, e_usages, e_term = infer(v, typechecking_context)
 
       local new_type_elements = value_array(type_data, substitute_type_variables(e_type, #typechecking_context + 1, 0))
-      type_data = value.data_value("cons", value.tuple_value(new_type_elements))
+      type_data = value.enum_value("cons", value.tuple_value(new_type_elements))
 
       add_arrays(usages, e_usages)
       new_elements:append(e_term)
@@ -598,7 +601,7 @@ function infer(
           return value.tuple_value(prefix_elements)
         end
       else
-        error("infer: trying to apply tuple elimination to something that isn't a tuple")
+        error("infer, is_tuple_elim, is_tuple_type, subject_value: expected a tuple")
       end
 
     elseif subject_type:is_prim_tuple_type() then
@@ -624,15 +627,15 @@ function infer(
           return value.tuple_value(prefix_elements)
         end
       else
-        error("infer: trying to apply primitive tuple elimination to something that isn't a primitive tuple")
+        error("infer, is_tuple_elim, is_prim_tuple_type, subject_value: expected a primitive tuple")
       end
     else
-      error("infer: trying to apply tuple elimination to something whose type isn't a tuple type")
+      error("infer, is_tuple_elim, subject_type: expected a term with a tuple type")
     end
 
     -- evaluate the type of the tuple
     local function make_inner_context(decls)
-      local constructor, arg = decls:unwrap_data_value()
+      local constructor, arg = decls:unwrap_enum_value()
       if constructor == "empty" then
         return typechecking_context, 0
       elseif constructor == "cons" then
@@ -661,14 +664,14 @@ function infer(
     -- type_data is either "empty", an empty tuple,
     -- or "cons", a tuple with the previous type_data and a function that
     -- takes all previous values and produces the type of the next element
-    local type_data = value.data_value("empty", tup_val())
+    local type_data = value.enum_value("empty", tup_val())
     local usages = usage_array()
     local new_fields = string_typed_map()
     for k, v in pairs(fields) do
       local e_type, e_usages, e_term = infer(v, typechecking_context)
 
       local new_type_elements = value_array(type_data, value.name(k), substitute_type_variables(e_type, #typechecking_context + 1, 0))
-      type_data = value.data_value("cons", value.tuple_value(new_type_elements))
+      type_data = value.enum_value("cons", value.tuple_value(new_type_elements))
 
       add_arrays(usages, e_usages)
       new_fields[k] = e_term
@@ -681,7 +684,7 @@ function infer(
     local subject_quantity, subject_type = subject_type:unwrap_qtype()
     local ok, decls = subject_type:as_record_type()
     if not ok then
-      error("infer: trying to apply record elimination to something whose type isn't a record type")
+      error("infer, is_record_elim, subject_type: expected a term with a record type")
     end
     -- evaluating the subject is necessary for inferring the type of the body
     local subject_value = evaluate(subject_term, typechecking_context:get_runtime_context())
@@ -707,12 +710,12 @@ function infer(
         return value.record_value(prefix_fields)
       end
     else
-      error("infer: trying to apply record elimination to something that isn't a record")
+      error("infer, is_record_elim, subject_value: expected a record")
     end
 
     -- evaluate the type of the record
     local function make_type(decls)
-      local constructor, arg = decls:unwrap_data_value()
+      local constructor, arg = decls:unwrap_enum_value()
       if constructor == "empty" then
         return string_array(), string_value_map()
       elseif constructor == "cons" then
@@ -734,7 +737,11 @@ function infer(
     -- reorder the fields into the requested order
     local inner_context = typechecking_context
     for _, v in ipairs(field_names) do
-      inner_context = inner_context:append(v, decls_field_types[v])
+      local t = decls_field_types[v]
+      if t == nil then
+        error("infer: trying to access a nonexistent record field")
+      end
+      inner_context = inner_context:append(v, t)
     end
 
     -- infer the type of the body, now knowing the type of the record
@@ -744,6 +751,20 @@ function infer(
     add_arrays(result_usages, subject_usages)
     add_arrays(result_usages, body_usages)
     return body_type, result_usages, typed_term.record_elim(subject_term, field_names, body_term)
+  elseif inferrable_term:is_enum_cons() then
+    local enum_type, constructor, arg = inferrable_term:unwrap_enum_cons()
+    local arg_type, arg_usages, arg_term = infer(arg, typechecking_context)
+    -- TODO: check arg_type against enum_type decls
+    return enum_type, arg_usages, typed_term.enum_cons(constructor, arg_term)
+  elseif inferrable_term:is_enum_elim() then
+    local subject, mechanism = inferrable_term:unwrap_enum_elim()
+    error("nyi")
+  elseif inferrable_term:is_object_cons() then
+    local methods = inferrable_term:unwrap_object_cons()
+    error("nyi")
+  elseif inferrable_term:is_object_elim() then
+    local subject, mechanism = inferrable_term:unwrap_object_elim()
+    error("nyi")
   elseif inferrable_term:is_operative_cons() then
     local operative_type, userdata = inferrable_term:unwrap_operative_cons()
     local operative_type_type, operative_type_usages, operative_type_term = infer(operative_type, typechecking_context)
@@ -751,7 +772,7 @@ function infer(
     local userdata_type, userdata_usages, userdata_term = infer(userdata, typechecking_context)
     local ok, op_handler, op_userdata_type = operative_type_value:as_operative_type()
     if not ok then
-      error("infer: trying to apply operative construction to something whose type isn't an operative type")
+      error("infer, is_operative_cons, operative_type_value: expected a term with an operative type")
     end
     if userdata_type ~= op_userdata_type and not fitsinto(userdata_type, op_userdata_type) then
 			p(userdata_type, op_userdata_type)
@@ -764,8 +785,8 @@ function infer(
     add_arrays(operative_usages, userdata_usages)
     return operative_type_value, operative_usages, typed_term.operative_cons(userdata_term)
   elseif inferrable_term:is_operative_type_cons() then
-    local function cons(...) return value.data_value("cons", tup_val(...)) end
-    local empty = value.data_value("empty", tup_val())
+    local function cons(...) return value.enum_value("cons", tup_val(...)) end
+    local empty = value.enum_value("empty", tup_val())
     local handler, userdata_type = inferrable_term:unwrap_operative_type_cons()
     local goal_type = value.pi(
       unrestricted(value.tuple_type(cons(cons(empty, const_combinator(unrestricted(prim_syntax_type))), const_combinator(unrestricted(prim_environment_type))))),
@@ -888,14 +909,14 @@ function evaluate(
     typed_term,
     runtime_context
     )
-  -- -> a value
+  -- -> an alicorn value
   -- TODO: typecheck typed_term and runtime_context?
-
-	if not runtime_context then
-		error "Missing runtime_context for evaluate(typed_term, runtime_context)"
-	end
-	if not terms.typed_term.value_check(typed_term) then error "tried to evaluate something that wasn't a typed term" end
-	if not terms.runtime_context_type.value_check(runtime_context) then error "tried to evaluate in a context that wasn't a runtime context" end
+  if terms.typed_term.value_check(typed_term) ~= true then
+    error("evaluate, typed_term: expected a typed term")
+  end
+  if terms.runtime_context_type.value_check(runtime_context) ~= true then
+    error("evaluate, runtime_context: expected a runtime context")
+  end
 
   if typed_term:is_bound_variable() then
     local rc_val = runtime_context:get(typed_term:unwrap_bound_variable())
@@ -952,7 +973,7 @@ function evaluate(
         stuck_element = element_value:unwrap_neutral()
         trailing_values = value_array()
       else
-        error("evaluate: trying to apply primitive tuple construction with something that isn't a primitive value")
+        error("evaluate, is_prim_tuple_cons, element_value: expected a primitive value")
       end
     end
     if stuck then
@@ -972,7 +993,6 @@ function evaluate(
       for i = 1, length do
         inner_context = inner_context:append(subject_elements[i])
       end
-      return evaluate(body, inner_context)
     elseif subject_value:is_prim_tuple_value() then
       local subject_elements = subject_value:unwrap_prim_tuple_value()
       if #subject_elements ~= length then
@@ -982,16 +1002,16 @@ function evaluate(
       for i = 1, length do
         inner_context = inner_context:append(value.prim(subject_elements[i]))
       end
-      return evaluate(body, inner_context)
     elseif subject_value:is_neutral() then
       local subject_neutral = subject_value:unwrap_neutral()
       for i = 1, length do
         inner_context = inner_context:append(value.neutral(neutral_value.tuple_element_access_stuck(subject_neutral, i)))
       end
-      return evaluate(body, inner_context)
     else
-      error("evaluate: trying to apply tuple elimination to something that isn't a tuple")
+      p(subject_value)
+      error("evaluate, is_tuple_elim, subject_value: expected a tuple")
     end
+    return evaluate(body, inner_context)
   elseif typed_term:is_record_cons() then
     local fields = typed_term:unwrap_record_cons()
     local new_fields = string_value_map()
@@ -1008,15 +1028,66 @@ function evaluate(
       for _, v in ipairs(field_names) do
         inner_context = inner_context:append(subject_fields[v])
       end
-      return evaluate(body, inner_context)
     elseif subject_value:is_neutral() then
       local subject_neutral = subject_value:unwrap_neutral()
       for _, v in ipairs(field_names) do
         inner_context = inner_context:append(value.neutral(neutral_value.record_field_access_stuck(subject_neutral, v)))
       end
-      return evaluate(body, inner_context)
     else
-      error("evaluate: trying to apply record elimination to something that isn't a record")
+      error("evaluate, is_record_elim, subject_value: expected a record")
+    end
+    return evaluate(body, inner_context)
+  elseif typed_term:is_enum_cons() then
+    local constructor, arg = typed_term:unwrap_enum_cons()
+    local arg_value = evaluate(arg, runtime_context)
+    return value.enum_value(constructor, arg_value)
+  elseif typed_term:is_enum_elim() then
+    local subject, mechanism = typed_term:unwrap_enum_elim()
+    local subject_value = evaluate(subject, runtime_context)
+    local mechanism_value = evaluate(mechanism, runtime_context)
+    if subject_value:is_enum_value() then
+      if mechanism_value:is_object_value() then
+        local constructor, arg = subject_value:unwrap_enum_value()
+        local methods, capture = mechanism_value:unwrap_object_value()
+        local this_method = value.closure(methods[constructor], capture)
+        return apply_value(this_method, arg)
+      elseif mechanism_value:is_neutral() then
+        -- objects and enums are categorical duals
+        local mechanism_neutral = mechanism_value:unwrap_neutral()
+        return value.neutral(neutral_value.object_elim_stuck(subject_value, mechanism_neutral))
+      else
+        error("evaluate, is_enum_elim, is_enum_value, mechanism_value: expected an object")
+      end
+    elseif subject_value:is_neutral() then
+      local subject_neutral = subject_value:unwrap_neutral()
+      return value.neutral(neutral_value.enum_elim_stuck(mechanism_value, subject_neutral))
+    else
+      error("evaluate, is_enum_elim, subject_value: expected an enum")
+    end
+  elseif typed_term:is_object_cons() then
+    return value.object_value(typed_term:unwrap_object_cons(), runtime_context)
+  elseif typed_term:is_object_elim() then
+    local subject, mechanism = typed_term:unwrap_object_elim()
+    local subject_value = evaluate(subject, runtime_context)
+    local mechanism_value = evaluate(mechanism, runtime_context)
+    if subject_value:is_object_value() then
+      if mechanism_value:is_enum_value() then
+        local methods, capture = subject_value:unwrap_object_value()
+        local constructor, arg = mechanism_value:unwrap_enum_value()
+        local this_method = value.closure(methods[constructor], capture)
+        return apply_value(this_method, arg)
+      elseif mechanism_value:is_neutral() then
+        -- objects and enums are categorical duals
+        local mechanism_neutral = mechanism_value:unwrap_neutral()
+        return value.neutral(neutral_value.enum_elim_stuck(subject_value, mechanism_neutral))
+      else
+        error("evaluate, is_object_elim, is_object_value, mechanism_value: expected an enum")
+      end
+    elseif subject_value:is_neutral() then
+      local subject_neutral = subject_value:unwrap_neutral()
+      return value.neutral(neutral_value.object_elim_stuck(mechanism_value, subject_neutral))
+    else
+      error("evaluate, is_object_elim, subject_value: expected an object")
     end
   elseif typed_term:is_operative_cons() then
     local userdata = typed_term:unwrap_operative_cons()
@@ -1043,11 +1114,11 @@ function evaluate(
     local content = typed_term:unwrap_prim_box()
     return value.prim(evaluate(content, runtime_context))
   elseif typed_term:is_prim_unbox() then
-    local container = typed_term:unwrap_prim_unbox()
-    if not container:is_prim() then
-      error "evaluate: trying to unbox something that isn't a prim"
+    local ok, prim = typed_term:unwrap_prim_unbox():as_prim()
+    if not ok then
+      error "evaluate, is_prim_unbox: expected a prim"
     end
-    return container:unwrap_prim() -- this should already be a value
+    return prim -- this should already be an alicorn value
 	elseif typed_term:is_let() then
 		local expr, body = typed_term:unwrap_let()
 		local expr_value = evaluate(expr, runtime_context)
