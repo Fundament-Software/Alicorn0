@@ -544,13 +544,10 @@ function infer(
     local usages = usage_array()
     local new_elements = typed_array()
     for _, v in ipairs(elements) do
-      local e_type, e_usages, e_term = infer(v, typechecking_context)
-
-      local new_type_elements = value_array(type_data, substitute_type_variables(e_type, #typechecking_context + 1, 0))
-      type_data = value.enum_value("cons", value.tuple_value(new_type_elements))
-
-      add_arrays(usages, e_usages)
-      new_elements:append(e_term)
+      local el_type, el_usages, el_term = infer(v, typechecking_context)
+      type_data = value.enum_value("cons", tup_val(type_data, substitute_type_variables(el_type, #typechecking_context + 1, 0)))
+      add_arrays(usages, el_usages)
+      new_elements:append(el_term)
     end
     -- TODO: handle quantities
     return unrestricted(value.tuple_type(type_data)), usages, typed_term.tuple_cons(new_elements)
@@ -564,13 +561,10 @@ function infer(
     local usages = usage_array()
     local new_elements = typed_array()
     for _, v in ipairs(elements) do
-      local e_type, e_usages, e_term = infer(v, typechecking_context)
-
-      local new_type_elements = value_array(type_data, substitute_type_variables(e_type, #typechecking_context + 1, 0))
-      type_data = value.enum_value("cons", value.tuple_value(new_type_elements))
-
-      add_arrays(usages, e_usages)
-      new_elements:append(e_term)
+      local el_type, el_usages, el_term = infer(v, typechecking_context)
+      type_data = value.enum_value("cons", tup_val(type_data, substitute_type_variables(el_type, #typechecking_context + 1, 0)))
+      add_arrays(usages, el_usages)
+      new_elements:append(el_term)
     end
     -- TODO: handle quantities
     return unrestricted(value.prim_tuple_type(type_data)), usages, typed_term.prim_tuple_cons(new_elements)
@@ -668,13 +662,10 @@ function infer(
     local usages = usage_array()
     local new_fields = string_typed_map()
     for k, v in pairs(fields) do
-      local e_type, e_usages, e_term = infer(v, typechecking_context)
-
-      local new_type_elements = value_array(type_data, value.name(k), substitute_type_variables(e_type, #typechecking_context + 1, 0))
-      type_data = value.enum_value("cons", value.tuple_value(new_type_elements))
-
-      add_arrays(usages, e_usages)
-      new_fields[k] = e_term
+      local field_type, field_usages, field_term = infer(v, typechecking_context)
+      type_data = value.enum_value("cons", tup_val(type_data, value.name(k), substitute_type_variables(field_type, #typechecking_context + 1, 0)))
+      add_arrays(usages, field_usages)
+      new_fields[k] = field_term
     end
     -- TODO: handle quantities
     return unrestricted(value.record_type(type_data)), usages, typed_term.record_cons(new_fields)
@@ -758,10 +749,26 @@ function infer(
     return enum_type, arg_usages, typed_term.enum_cons(constructor, arg_term)
   elseif inferrable_term:is_enum_elim() then
     local subject, mechanism = inferrable_term:unwrap_enum_elim()
+    local subject_type, subject_usages, subject_term = infer(subject, typechecking_context)
+    -- local subject_quantity, subject_type = subject_type:unwrap_qtype()
+    -- local ok, decls = subject_type:as_enum_type()
+    -- if not ok then
+    --   error("infer, is_enum_elim, subject_type: expected a term with an enum type")
+    -- end
+    local mechanism_type, mechanism_usages, mechanism_term = infer(mechanism, typechecking_context)
+    -- TODO: check subject decls against mechanism decls
     error("nyi")
   elseif inferrable_term:is_object_cons() then
     local methods = inferrable_term:unwrap_object_cons()
-    error("nyi")
+    local type_data = value.enum_value("empty", tup_val())
+    local new_methods = string_typed_map()
+    for k, v in pairs(methods) do
+      local method_type, method_usages, method_term = infer(v, typechecking_context)
+      type_data = value.enum_value("cons", tup_val(type_data, value.name(k), method_type))
+      new_methods[k] = method_term
+    end
+    -- TODO: usages
+    return unrestricted(value.object_type(type_data)), usages_array(), typed_term.object_cons(new_methods)
   elseif inferrable_term:is_object_elim() then
     local subject, mechanism = inferrable_term:unwrap_object_elim()
     error("nyi")
