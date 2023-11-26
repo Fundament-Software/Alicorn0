@@ -181,6 +181,9 @@ local function fitsinto_record_generator(trait, t, info)
 		if self == other then
 			return true
 		end
+		if self.kind ~= other.kind then
+			return false, fitsinto_fail("incompatible kinds: " .. self.kind .. ", " .. other.kind)
+		end
 		local ok, err
 		%s
 		return true
@@ -278,6 +281,19 @@ function fitsinto(a, b)
 	if a == b then
 		return true
 	end
+	--[[
+	print "AAAAAAAAAAAAAAA (evaluator.lua)"
+	if a and a.pretty_print then
+		print(a:pretty_print())
+	else
+		print(type(a))
+	end
+	if b and b.pretty_print then
+		print(b:pretty_print())
+	else
+		print(type(b))
+	end
+	--]]
 	return value_fitsinto(a, b)
 end
 
@@ -390,14 +406,19 @@ local function check(
 		error("check, target_type: expected a target type (as an alicorn value)")
 	end
 
+	--print("!!!!!!!!!!!!! running check!")
+	--print(checkable_term:pretty_print())
+	--print(target_type:pretty_print())
+	--print("///////////// running check!")
+
 	if checkable_term:is_inferrable() then
 		local inferrable_term = checkable_term:unwrap_inferrable()
 		local inferred_type, inferred_usages, typed_term = infer(inferrable_term, typechecking_context)
 		-- TODO: unify!!!!
 		if inferred_type ~= target_type then
-			print "attempting to check if terms fit"
-			print(inferred_type:pretty_print())
-			print(target_type:pretty_print())
+			--print "attempting to check if terms fit"
+			--print(inferred_type:pretty_print())
+			--print(target_type:pretty_print())
 			local ok, err = fitsinto(inferred_type, target_type)
 			if not ok then
 				--inferred_type = inferred_type:unify(target_type)
@@ -1032,6 +1053,10 @@ function infer(
 		return bodytype, result_usages, terms.typed_term.let(exprterm, bodyterm)
 	elseif inferrable_term:is_prim_intrinsic() then
 		local source, type = inferrable_term:unwrap_prim_intrinsic()
+		print("!!!!!!!!!!!!! check out what we got!")
+		print(source:pretty_print())
+		print(type:pretty_print())
+		print("///////////// check out what we got!")
 		local source_type, source_usages, source_term = check(source, typechecking_context, unrestricted(value.prim_string_type))
 		local type_type, type_usages, type_term = check(type, typechecking_context, value.qtype_type(0))
 		-- FIXME: type_type, source_type are ignored, need checked?

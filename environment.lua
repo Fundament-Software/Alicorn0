@@ -63,7 +63,7 @@ function environment:get(name)
 end
 
 function environment:bind_local(binding)
-	p(binding)
+	--p(binding)
 	if binding:is_let() then
 		local name, expr = binding:unwrap_let()
 		local expr_type, expr_usages, expr_term = infer(expr, self.typechecking_context)
@@ -129,8 +129,8 @@ function environment:bind_local(binding)
 		local param_name, param_annotation = binding:unwrap_annotated_lambda()
 		local annotation_type, annotation_usages, annotation_term =
 			infer(param_annotation, self.typechecking_context)
-		print("binding lambda annotation")
-		print(annotation_term:pretty_print())
+		--print("binding lambda annotation")
+		--print(annotation_term:pretty_print())
 		local evaled = eval.evaluate(annotation_term, self.typechecking_context.runtime_context)
 		local bindings = self.bindings:append(binding)
 		local locals = self.locals:put(param_name, inferrable_term.bound_variable(#self.typechecking_context + 1))
@@ -178,8 +178,8 @@ end
 ---@return ShadowEnvironment
 ---@return Environment
 function environment:enter_block()
-	print "entering block"
-	self.typechecking_context:dump_names()
+	--print "entering block"
+	--self.typechecking_context:dump_names()
 	return { shadowed = self },
 		new_env {
 			-- locals = nil,
@@ -206,12 +206,12 @@ function environment:exit_block(term, shadowed)
 		typechecking_context = outer.typechecking_context,
 		bindings = outer.bindings,
 	}
-	print("exiting block and dropping " .. #self.bindings .. " bindings")
-	self.typechecking_context:dump_names()
-	print "outer"
-	outer.typechecking_context:dump_names()
-	print "new"
-	env.typechecking_context:dump_names()
+	--print("exiting block and dropping " .. #self.bindings .. " bindings")
+	--self.typechecking_context:dump_names()
+	--print "outer"
+	--outer.typechecking_context:dump_names()
+	--print "new"
+	--env.typechecking_context:dump_names()
 	local wrapped = term
 	for idx = self.bindings:len(), 1, -1 do
 		local binding = self.bindings:get(idx)

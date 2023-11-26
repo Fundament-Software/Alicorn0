@@ -306,6 +306,19 @@ local function trait_method(trait, method, build_record_function, specialization
 			local chunk = [[
 				local variant_impls = ...
 				return function(self, other)
+					--[=[
+					print "AAAAAAAAAAAAAAA (derivers.lua)"
+					if self and self.pretty_print then
+						print(self:pretty_print())
+					else
+						print(type(self))
+					end
+					if other and other.pretty_print then
+						print(other:pretty_print())
+					else
+						print(type(other))
+					end
+					--]=]
 					return variant_impls[self.kind](self, other)
 				end
 			]]
