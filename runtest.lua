@@ -8,9 +8,9 @@ local exprs = require "./alicorn-expressions"
 local fs = require "fs"
 
 local src = fs.readFileSync("testfile.alc")
---print("read code")
---print(src)
---print("parsing code")
+print("read code")
+print(src)
+print("parsing code")
 local code = format.read(src, "inline")
 -- p(code)
 
@@ -18,9 +18,8 @@ local env = base_env.create()
 
 local shadowed, env = env:enter_block()
 
---print("Expression -> terms")
+print("Expression -> terms")
 local ok, expr, env = code:match({ exprs.block(metalanguage.accept_handler, env) }, metalanguage.failure_handler, nil)
-error("bug fixed!")
 if not ok then
 	print("evaluating failed")
 	print(expr)

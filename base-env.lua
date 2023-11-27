@@ -310,10 +310,10 @@ local prim_func_type_impl_reducer = metalang.reducer(function(syntax, env)
 	end
 
 	local names = gen.declare_array(gen.builtin_string)()
-	--print("is env an environment? (before loop)")
+	print("is env an environment? (before loop)")
 	--p(env)
-	--print(env.get)
-	--print(env.enter_block)
+	print(env.get)
+	print(env.enter_block)
 	if not env.enter_block then
 		error "env isn't an environment in prim_func_type_impl_reducer"
 	end
@@ -322,18 +322,18 @@ local prim_func_type_impl_reducer = metalang.reducer(function(syntax, env)
 	local ok, continue = true, true
 	while ok and continue do
 		ok, head, tail = syntax:match({ metalang.ispair(metalang.accept_handler) }, metalang.failure_handler, env)
-		--print(env)
+		print(env)
 		if not ok then
 			break
 		end
 
-		--print("is env an environment? (in loop)")
+		print("is env an environment? (in loop)")
 		--p(env)
-		--print(env.get)
-		--print(env.enter_block)
+		print(env.get)
+		print(env.enter_block)
 
-		--print "args in loop is"
-		--print(args:pretty_print())
+		print "args in loop is"
+		print(args:pretty_print())
 
 		ok, continue, name, type_val, type_env = head:match({
 			metalang.symbol_exact(function()
@@ -355,12 +355,12 @@ local prim_func_type_impl_reducer = metalang.reducer(function(syntax, env)
 			names = names:copy()
 			names:append(name)
 		end
-		--print("arg", ok, continue, name, type_val, type_env)
+		print("arg", ok, continue, name, type_val, type_env)
 		--error "TODO use ascribed_name results"
 
 		syntax = tail
 	end
-	--print("moving on to return type")
+	print("moving on to return type")
 	ok, continue = true, true
 	local shadowed, env = env:enter_block()
 	env = env:bind_local(terms.binding.annotated_lambda("#arg", build_type_term(args)))
@@ -370,7 +370,7 @@ local prim_func_type_impl_reducer = metalang.reducer(function(syntax, env)
 	local results = empty
 	while ok and continue do
 		ok, head, tail = syntax:match({ metalang.ispair(metalang.accept_handler) }, metalang.failure_handler, env)
-		--print(env)
+		print(env)
 		if not ok then
 			break
 		end
@@ -383,7 +383,7 @@ local prim_func_type_impl_reducer = metalang.reducer(function(syntax, env)
 				return ok, true, ...
 			end, env, build_type_term(results), names),
 		}, metalang.failure_handler, env)
-		--print("result", ok, continue, name, type_val, type_env)
+		print("result", ok, continue, name, type_val, type_env)
 
 		if ok and continue then
 			env = type_env
@@ -400,7 +400,7 @@ local prim_func_type_impl_reducer = metalang.reducer(function(syntax, env)
 	end
 
 	local env, fn_type_term = env:exit_block(terms.inferrable_term.qtype(unrestricted_term, terms.inferrable_term.prim_function_type(args, results)), shadowed)
-	--print("reached end of function type construction")
+	print("reached end of function type construction")
 	if not env.enter_block then
 		error "env isn't an environment at end in prim_func_type_impl_reducer"
 	end
@@ -414,10 +414,10 @@ end, "prim_func_type_impl")
 ---@return unknown
 ---@return unknown
 local function prim_func_type_impl(syntax, env)
-	--print("in prim_func_type_impl")
+	print("in prim_func_type_impl")
 	local ok, fn_type_term, env =
 		syntax:match({ prim_func_type_impl_reducer(metalang.accept_handler, env) }, metalang.failure_handler, env)
-	--print("finished matching prim_func_type_impl")
+	print("finished matching prim_func_type_impl")
 	if not ok then return ok, fn_type_term end
 	if not env.enter_block then
 		error "env isn't an environment at end in prim_func_type_impl"

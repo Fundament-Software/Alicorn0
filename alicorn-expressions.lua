@@ -239,7 +239,7 @@ end
 local function inferred_expression_symbolhandler(env, name)
 	--print("looking up symbol", name)
 	--p(env)
-	--print(name, split_dot_accessors(name))
+	print(name, split_dot_accessors(name))
 	local front, rest = split_dot_accessors(name)
 	if not front then
 		local ok, val = env:get(name)
@@ -264,7 +264,7 @@ end
 
 local function inferred_expression_valuehandler(env, val)
 	if val.type == "f64" then
-		--p(val)
+		p(val)
 		return true,
 			inferrable_term.typed(
 				unrestricted(value.prim_number_type),
