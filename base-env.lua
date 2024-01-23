@@ -642,6 +642,32 @@ local function lambda_impl(syntax, env)
 	return true, term, resenv
 end
 
+local function checkable_filled_hole_impl(syntax, env)
+	-- TODO: not block, just a single expression
+	local ok, val, env = syntax:match(
+		{ exprs.block(metalang.accept_handler, exprs.ExpressionArgs.new(terms.expression_target.infer, env)) },
+		metalang.failure_handler,
+		nil
+	)
+	if not ok then
+		return ok, val
+	end
+	return ok, terms.checkable_term.filled_hole(val), env
+end
+
+local function inferrable_filled_hole_impl(syntax, env)
+	-- TODO: not block, just a single expression
+	local ok, val, env = syntax:match(
+		{ exprs.block(metalang.accept_handler, exprs.ExpressionArgs.new(terms.expression_target.infer, env)) },
+		metalang.failure_handler,
+		nil
+	)
+	if not ok then
+		return ok, val
+	end
+	return ok, terms.inferrable_term.filled_hole(val), env
+end
+
 local value = terms.value
 local typed = terms.typed_term
 
@@ -883,6 +909,10 @@ local core_operations = {
 	--tuple = evaluator.primitive_operative(tuple_type_impl),
 	--["tuple-of"] = evaluator.primitive_operative(tuple_of_impl),
 	--number = { type = types.type, val = types.number }
+	chole = terms.checkable_term.hole,
+	cfhole = exprs.primitive_operative(checkable_filled_hole_impl, "checkable_filled_hole_impl"),
+	ihole = terms.inferrable_term.hole,
+	ifhole = exprs.primitive_operative(inferrable_filled_hole_impl, "inferrable_filled_hole_impl"),
 }
 
 -- FIXME: use these once reimplemented with terms

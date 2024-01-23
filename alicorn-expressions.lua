@@ -702,7 +702,7 @@ collect_prim_tuple = metalanguage.reducer(function(syntax, args)
 				end
 			end
 			if not ok then
-				continue = continue
+				continue = tostring(continue) -- TODO: workarounded, fix properly!
 					.. " (should have "
 					.. tostring(#closures)
 					.. ", found "

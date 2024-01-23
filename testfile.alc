@@ -5,6 +5,11 @@
 let prim-arith-binop = (prim-func-type (a : prim-number) (b : prim-number) -> (c : prim-number))
 let prim-sub = (intrinsic "return function(a, b) return a - b end" : prim-arith-binop)
 
+#let kitty = (prim-sub 42 chole)
+let kitty = (prim-sub 42 (cfhole 69))
+let kitty = ihole
+let kitty = (ifhole "idk")
+
 #let prim-sub = (intrinsic "return function(a, b) return a - b end" : (prim-func-type (a : prim-number) (b : prim-number) -> (c : prim-number)))
 
 #let foo = (record (bar = 5) (baz = 6))

@@ -335,6 +335,8 @@ checkable_term:define_enum("checkable", {
 		"body",
 		checkable_term,
 	} },
+	{ "hole" },
+	{ "filled_hole", { "inner", inferrable_term } }, -- TODO: really inferrable? or checkable?
 	-- TODO: enum_cons
 })
 -- inferrable terms can have their type inferred / don't need a target type
@@ -509,6 +511,8 @@ inferrable_term:define_enum("inferrable", {
 			inferrable_term, --checkable_term,
 		},
 	},
+	{ "hole" },
+	{ "filled_hole", { "inner", inferrable_term } },
 })
 -- typed terms have been typechecked but do not store their type internally
 typed_term:define_enum("typed", {
