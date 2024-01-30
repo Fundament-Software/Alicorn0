@@ -704,20 +704,19 @@ local function lambda_impl(syntax, env)
 	return true, term, resenv
 end
 
-local function checkable_filled_hole_impl(syntax, env)
-	-- TODO: not block, just a single expression
-	local ok, val, env = syntax:match(
-		{ exprs.block(metalang.accept_handler, exprs.ExpressionArgs.new(terms.expression_target.infer, env)) },
-		metalang.failure_handler,
-		nil
-	)
-	if not ok then
-		return ok, val
+local function hole_impl(syntax, env, goal, userdata)
+	-- TODO: how to say that this operative takes nothing?
+	if goal:is_infer() then
+		return true, terms.inferrable_term.hole, env
+	elseif goal:is_check() then
+		local target_type = goal:unwrap_check() -- TODO: do i need this?
+		return true, terms.checkable_term.hole, env
+	else
+		error("goal needs to be inferrable or checkable")
 	end
-	return ok, terms.checkable_term.filled_hole(val), env
 end
 
-local function inferrable_filled_hole_impl(syntax, env)
+local function filled_hole_impl(syntax, env, goal, userdata)
 	-- TODO: not block, just a single expression
 	local ok, val, env = syntax:match(
 		{ exprs.block(metalang.accept_handler, exprs.ExpressionArgs.new(terms.expression_target.infer, env)) },
@@ -727,7 +726,14 @@ local function inferrable_filled_hole_impl(syntax, env)
 	if not ok then
 		return ok, val
 	end
-	return ok, terms.inferrable_term.filled_hole(val), env
+	if goal:is_infer() then
+		return ok, terms.inferrable_term.filled_hole(val), env
+	elseif goal:is_check() then
+		local target_type = goal:unwrap_check() -- TODO: do i need this?
+		return ok, terms.checkable_term.filled_hole(val), env
+	else
+		error("goal needs to be inferrable or checkable")
+	end
 end
 
 local value = terms.value
@@ -994,10 +1000,8 @@ local core_operations = {
 	--tuple = evaluator.primitive_operative(tuple_type_impl),
 	--["tuple-of"] = evaluator.primitive_operative(tuple_of_impl),
 	--number = { type = types.type, val = types.number }
-	chole = terms.checkable_term.hole,
-	cfhole = exprs.primitive_operative(checkable_filled_hole_impl, "checkable_filled_hole_impl"),
-	ihole = terms.inferrable_term.hole,
-	ifhole = exprs.primitive_operative(inferrable_filled_hole_impl, "inferrable_filled_hole_impl"),
+	hole = exprs.primitive_operative(hole_impl, "hole_impl"),
+	fhole = exprs.primitive_operative(filled_hole_impl, "filled_hole_impl"),
 }
 
 -- FIXME: use these once reimplemented with terms
