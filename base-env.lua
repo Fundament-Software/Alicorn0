@@ -136,7 +136,9 @@ local function intrinsic(syntax, env)
 	if not env then
 		error "env nil in base-env.intrinsic"
 	end
-	return true, terms.inferrable_term.prim_intrinsic(str, type--[[terms.checkable_term.inferrable(type)]]), env
+	return true,
+		terms.inferrable_term.prim_intrinsic(str, type--[[terms.checkable_term.inferrable(type)]], syntax.anchor),
+		env
 end
 
 --evaluator.define_operate(
@@ -231,7 +233,7 @@ local ascribed_name = metalang.reducer(function(syntax, env, prev, names)
 	-- print(env.enter_block)
 	---@cast env Environment
 	local shadowed, env = env:enter_block()
-	env = env:bind_local(terms.binding.annotated_lambda("#prev", prev))
+	env = env:bind_local(terms.binding.annotated_lambda("#prev", prev, syntax.anchor))
 	local ok, prev_binding = env:get("#prev")
 	if not ok then
 		error "#prev should always be bound, was just added"
@@ -271,6 +273,8 @@ local function prim_func_type_empty_handler(env)
 end
 
 local prim_func_type_impl_reducer = metalang.reducer(function(syntax, env)
+	local pft_anchor = syntax.anchor
+
 	local value_array = gen.declare_array(terms.value)
 	local inf_array = gen.declare_array(terms.inferrable_term)
 	local usage_array = gen.declare_array(gen.builtin_number)
@@ -335,7 +339,9 @@ local prim_func_type_impl_reducer = metalang.reducer(function(syntax, env)
 	print("moving on to return type")
 	ok, continue = true, true
 	local shadowed, env = env:enter_block()
-	env = env:bind_local(terms.binding.annotated_lambda("#arg", build_type_term(args)))
+
+	-- syntax.anchor can be nil so we fall back to the anchor for the start of this prim func type if needed
+	env = env:bind_local(terms.binding.annotated_lambda("#arg", build_type_term(args), syntax.anchor or pft_anchor))
 	local ok, arg = env:get("#arg")
 	env = env:bind_local(terms.binding.tuple_elim(names, arg))
 	names = gen.declare_array(gen.builtin_string)()
@@ -481,7 +487,7 @@ local forall_type_impl_reducer = metalang.reducer(function(syntax, env)
 	print("moving on to return type")
 	ok, continue = true, true
 	local shadowed, env = env:enter_block()
-	env = env:bind_local(terms.binding.annotated_lambda("#arg", build_type_term(args)))
+	env = env:bind_local(terms.binding.annotated_lambda("#arg", build_type_term(args), syntax.anchor))
 	local ok, arg = env:get("#arg")
 	env = env:bind_local(terms.binding.tuple_elim(names, arg))
 	names = gen.declare_array(gen.builtin_string)()
@@ -521,16 +527,28 @@ local forall_type_impl_reducer = metalang.reducer(function(syntax, env)
 		unrestricted_term,
 		terms.inferrable_term.pi(
 			build_type_term(args),
-			terms.inferrable_term.typed(
-				terms.value.param_info_type,
-				usage_array(),
-				terms.typed_term.literal(terms.value.param_info(terms.value.visibility(terms.visibility.explicit)))
+			terms.checkable_term.inferrable(
+				terms.inferrable_term.qtype(
+					unrestricted_term,
+					terms.inferrable_term.typed(
+						terms.value.param_info_type,
+						usage_array(),
+						terms.typed_term.literal(
+							terms.value.param_info(terms.value.visibility(terms.visibility.explicit))
+						)
+					)
+				)
 			),
 			fn_res_term,
-			terms.inferrable_term.typed(
-				terms.value.result_info_type,
-				usage_array(),
-				terms.typed_term.literal(terms.value.result_info(terms.value.purity(terms.purity.pure)))
+			terms.checkable_term.inferrable(
+				terms.inferrable_term.qtype(
+					unrestricted_term,
+					terms.inferrable_term.typed(
+						terms.value.result_info_type,
+						usage_array(),
+						terms.typed_term.literal(terms.value.result_info(terms.result_info(terms.purity.pure)))
+					)
+				)
 			)
 		)
 	)
@@ -551,11 +569,11 @@ local function forall_type_impl(syntax, env)
 	print("in forall_type_impl")
 	local ok, fn_type_term, env =
 		syntax:match({ forall_type_impl_reducer(metalang.accept_handler, env) }, metalang.failure_handler, env)
-	print("finished matching prim_func_type_impl and got")
-	print(fn_type_term:pretty_print())
 	if not ok then
 		return ok, fn_type_term
 	end
+	print("finished matching prim_func_type_impl and got")
+	print(fn_type_term:pretty_print())
 	if not env.enter_block then
 		error "env isn't an environment at end in prim_func_type_impl"
 	end
@@ -565,6 +583,50 @@ local function forall_type_impl(syntax, env)
 	-- enter a block, perform lambda binding, perform tuple destrucutring binding, parse out the type of the ascription
 
 	--local ok,
+end
+
+---Constrains a type by using a checked expression target and producing an annotated inferrable term
+---(the prim-number 5) -> produces inferrable_term.annotated(lit(5), lit(prim-number))
+---@param syntax any
+---@param env Environment
+---@return boolean
+---@return unknown
+---@return unknown|nil
+local function the_operative_impl(syntax, env)
+	local ok, type_inferrable_term, tail = syntax:match({
+		metalang.listtail(metalang.accept_handler, exprs.inferred_expression(metalang.accept_handler, env)),
+	}, metalang.failure_handler, nil)
+	if not ok then
+		return ok, type, tail
+	end
+
+	local type_of_typed_term, usages, type_typed_term = evaluator.infer(type_inferrable_term, env.typechecking_context)
+	local evaled_type = evaluator.evaluate(type_typed_term, env.typechecking_context.runtime_context)
+
+	print("type_inferrable_term", type_inferrable_term)
+	print("evaled_type", evaled_type)
+	print("tail", tail)
+	local ok, val, tail = tail:match({
+		metalang.ispair(metalang.accept_handler),
+	}, metalang.failure_handler, nil)
+	if not ok then
+		return false, val
+	end
+	local ok, val, env = val:match({
+		exprs.expression(
+			metalang.accept_handler,
+			-- FIXME: do we infer here if evaled_type is stuck / a placeholder?
+			exprs.ExpressionArgs.new(terms.expression_target.check(evaled_type), env)
+		),
+	}, metalang.failure_handler, nil)
+	if not ok then
+		return ok, val
+	end
+	if terms.checkable_term.value_check(val) ~= true then
+		print("val", val)
+		error "the operative didn't get a checkable term"
+	end
+	return ok, terms.inferrable_term.annotated(val, type_inferrable_term), env
 end
 
 ---@param syntax any
@@ -627,7 +689,7 @@ local function lambda_impl(syntax, env)
 	end
 
 	local shadow, inner_env = env:enter_block()
-	inner_env = inner_env:bind_local(terms.binding.annotated_lambda("#arg", params_group.types))
+	inner_env = inner_env:bind_local(terms.binding.annotated_lambda("#arg", params_group.types, syntax.anchor))
 	local _, arg = inner_env:get("#arg")
 	inner_env = inner_env:bind_local(terms.binding.tuple_elim(params_group.names, arg))
 	local ok, expr, env = tail:match(
@@ -673,10 +735,21 @@ local typed = terms.typed_term
 
 local usage_array = gen.declare_array(gen.builtin_number)
 local val_array = gen.declare_array(value)
+
+local function lit_term(val, typ)
+	return terms.inferrable_term.typed(typ, usage_array(), terms.typed_term.literal(val))
+end
+local function unrestricted(x)
+	return value.qtype(value.quantity(terms.quantity.unrestricted), x)
+end
+local function unrestricted_typed(term)
+	return typed.qtype(typed.literal(value.quantity(terms.quantity.unrestricted)), term)
+end
+
 local function startype_impl(syntax, env)
 	local ok, level_val = syntax:match({
-		metalang.listmatch(metalang.isvalue(metalang.accept_handler)),
-	})
+		metalang.listmatch(metalang.accept_handler, metalang.isvalue(metalang.accept_handler)),
+	}, metalang.failure_handler, nil)
 	if not ok then
 		return ok, level_val
 	end
@@ -687,19 +760,12 @@ local function startype_impl(syntax, env)
 		return false, "literal must be an integer for type levels"
 	end
 	local term = terms.inferrable_term.typed(
-		terms.typed_term.star(level_val.val + 1),
+		unrestricted(value.star(level_val.val + 1)),
 		usage_array(),
-		terms.typed_term.star(level_val.val)
+		unrestricted_typed(terms.typed_term.star(level_val.val))
 	)
 
 	return true, term, env
-end
-
-local function lit_term(val, typ)
-	return terms.inferrable_term.typed(typ, usage_array(), terms.typed_term.literal(val))
-end
-local function unrestricted(x)
-	return value.qtype(value.quantity(terms.quantity.unrestricted), x)
 end
 
 local function val_tup_cons(...)
@@ -710,47 +776,11 @@ local function val_desc_elem(x)
 end
 local val_desc_empty = value.enum_value("empty", val_tup_cons())
 
-local core_operations = {
-	["+"] = exprs.primitive_applicative(function(a, b)
-		return a + b
-	end, { value.prim_number_type, value.prim_number_type }, { value.prim_number_type }),
-	["-"] = exprs.primitive_applicative(function(a, b)
-		return a - b
-	end, { value.prim_number_type, value.prim_number_type }, { value.prim_number_type }),
-	["*"] = exprs.primitive_applicative(function(a, b)
-		return a * b
-	end, { value.prim_number_type, value.prim_number_type }, { value.prim_number_type }),
-	["/"] = exprs.primitive_applicative(function(a, b)
-		return a / b
-	end, { value.prim_number_type, value.prim_number_type }, { value.prim_number_type }),
-	["%"] = exprs.primitive_applicative(function(a, b)
-		return a % b
-	end, { value.prim_number_type, value.prim_number_type }, { value.prim_number_type }),
-	neg = exprs.primitive_applicative(function(a)
-		return -a
-	end, { value.prim_number_type }, { value.prim_number_type }),
-
-	--["<"] = evaluator.primitive_applicative(function(args)
-	--  return { variant = (args[1] < args[2]) and 1 or 0, arg = types.unit_val }
-	--end, types.tuple {types.number, types.number}, types.cotuple({types.unit, types.unit})),
-	--["=="] = evaluator.primitive_applicative(function(args)
-	--  return { variant = (args[1] == args[2]) and 1 or 0, arg = types.unit_val }
-	--end, types.tuple {types.number, types.number}, types.cotuple({types.unit, types.unit})),
-
-	--["do"] = evaluator.primitive_operative(do_block),
-	let = exprs.primitive_operative(let_bind, "let_bind"),
-	record = exprs.primitive_operative(record_build, "record_build"),
-	intrinsic = exprs.primitive_operative(intrinsic, "intrinsic"),
-	["prim-number"] = lit_term(unrestricted(value.prim_number_type), unrestricted(value.prim_type_type)),
-	["prim-type"] = lit_term(unrestricted(value.prim_type_type), unrestricted(value.star(1))),
-	["prim-func-type"] = exprs.primitive_operative(prim_func_type_impl, "prim_func_type_impl"),
-	type = lit_term(value.star(1), value.star(0)),
-	type_ = exprs.primitive_operative(startype_impl, "startype_impl"),
-	["forall"] = exprs.primitive_operative(forall_type_impl, "forall_type_impl"),
-	lambda = exprs.primitive_operative(lambda_impl, "lambda_impl"),
-	box = lit_term(
+-- eg typed.prim_wrap, typed.prim_wrapped_type
+local function build_wrap(body_fn, type_fn)
+	return lit_term(
 		value.closure(
-			typed.tuple_elim(typed.bound_variable(1), 2, typed.prim_box(typed.bound_variable(3))),
+			typed.tuple_elim(typed.bound_variable(1), 2, body_fn(typed.bound_variable(3))),
 			terms.runtime_context()
 		),
 		unrestricted(
@@ -794,7 +824,7 @@ local core_operations = {
 						2,
 						typed.qtype(
 							typed.literal(value.quantity(terms.quantity.unrestricted)),
-							typed.prim_boxed_type(typed.bound_variable(2))
+							type_fn(typed.bound_variable(2))
 						)
 					),
 					terms.runtime_context()
@@ -802,10 +832,14 @@ local core_operations = {
 				value.result_info(terms.result_info(terms.purity.pure))
 			)
 		)
-	),
-	unbox = lit_term(
+	)
+end
+
+-- eg typed.prim_unwrap, typed.prim_wrapped_type
+local function build_unwrap(body_fn, type_fn)
+	return lit_term(
 		value.closure(
-			typed.tuple_elim(typed.bound_variable(1), 2, typed.prim_unbox(typed.bound_variable(3))),
+			typed.tuple_elim(typed.bound_variable(1), 2, body_fn(typed.bound_variable(3))),
 			terms.runtime_context()
 		),
 		unrestricted(
@@ -836,7 +870,7 @@ local core_operations = {
 										1,
 										typed.qtype(
 											typed.literal(value.quantity(terms.quantity.unrestricted)),
-											typed.prim_boxed_type(typed.bound_variable(2))
+											type_fn(typed.bound_variable(2))
 										)
 									),
 									terms.runtime_context()
@@ -853,15 +887,19 @@ local core_operations = {
 				value.result_info(terms.result_info(terms.purity.pure))
 			)
 		)
-	),
-	boxed = lit_term(
+	)
+end
+
+-- eg typed.prim_wrapped_type,
+local function build_wrapped(body_fn)
+	return lit_term(
 		value.closure(
 			typed.tuple_elim(
 				typed.bound_variable(1),
 				1,
 				typed.qtype(
 					typed.literal(value.quantity(terms.quantity.unrestricted)),
-					typed.prim_boxed_type(typed.bound_variable(2))
+					body_fn(typed.bound_variable(2))
 				)
 			),
 			terms.runtime_context()
@@ -903,7 +941,54 @@ local core_operations = {
 				value.result_info(terms.result_info(terms.purity.pure))
 			)
 		)
-	),
+	)
+end
+
+local core_operations = {
+	["+"] = exprs.primitive_applicative(function(a, b)
+		return a + b
+	end, { value.prim_number_type, value.prim_number_type }, { value.prim_number_type }),
+	["-"] = exprs.primitive_applicative(function(a, b)
+		return a - b
+	end, { value.prim_number_type, value.prim_number_type }, { value.prim_number_type }),
+	["*"] = exprs.primitive_applicative(function(a, b)
+		return a * b
+	end, { value.prim_number_type, value.prim_number_type }, { value.prim_number_type }),
+	["/"] = exprs.primitive_applicative(function(a, b)
+		return a / b
+	end, { value.prim_number_type, value.prim_number_type }, { value.prim_number_type }),
+	["%"] = exprs.primitive_applicative(function(a, b)
+		return a % b
+	end, { value.prim_number_type, value.prim_number_type }, { value.prim_number_type }),
+	neg = exprs.primitive_applicative(function(a)
+		return -a
+	end, { value.prim_number_type }, { value.prim_number_type }),
+
+	--["<"] = evaluator.primitive_applicative(function(args)
+	--  return { variant = (args[1] < args[2]) and 1 or 0, arg = types.unit_val }
+	--end, types.tuple {types.number, types.number}, types.cotuple({types.unit, types.unit})),
+	--["=="] = evaluator.primitive_applicative(function(args)
+	--  return { variant = (args[1] == args[2]) and 1 or 0, arg = types.unit_val }
+	--end, types.tuple {types.number, types.number}, types.cotuple({types.unit, types.unit})),
+
+	--["do"] = evaluator.primitive_operative(do_block),
+	let = exprs.primitive_operative(let_bind, "let_bind"),
+	record = exprs.primitive_operative(record_build, "record_build"),
+	intrinsic = exprs.primitive_operative(intrinsic, "intrinsic"),
+	["prim-number"] = lit_term(unrestricted(value.prim_number_type), unrestricted(value.prim_type_type)),
+	["prim-type"] = lit_term(unrestricted(value.prim_type_type), unrestricted(value.star(1))),
+	["prim-func-type"] = exprs.primitive_operative(prim_func_type_impl, "prim_func_type_impl"),
+	type = lit_term(unrestricted(value.star(0)), unrestricted(value.star(1))),
+	type_ = exprs.primitive_operative(startype_impl, "startype_impl"),
+	["forall"] = exprs.primitive_operative(forall_type_impl, "forall_type_impl"),
+	lambda = exprs.primitive_operative(lambda_impl, "lambda_impl"),
+	the = exprs.primitive_operative(the_operative_impl, "the"),
+	wrap = build_wrap(typed.prim_wrap, typed.prim_wrapped_type),
+	["unstrict-wrap"] = build_wrap(typed.prim_unstrict_wrap, typed.prim_unstrict_wrapped_type),
+	wrapped = build_wrapped(typed.prim_wrapped_type),
+	["unstrict-wrapped"] = build_wrapped(typed.prim_unstrict_wrapped_type),
+	unwrap = build_unwrap(typed.prim_unwrap, typed.prim_wrapped_type),
+	["unstrict-unwrap"] = build_unwrap(typed.prim_unstrict_unwrap, typed.prim_unstrict_wrapped_type),
 	--["dump-env"] = evaluator.primitive_operative(function(syntax, env) print(environment.dump_env(env)); return true, types.unit_val, env end),
 	--["basic-fn"] = evaluator.primitive_operative(basic_fn),
 	--tuple = evaluator.primitive_operative(tuple_type_impl),

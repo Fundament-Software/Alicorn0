@@ -13,6 +13,8 @@ local value = terms.value
 local neutral_value = terms.neutral_value
 local prim_syntax_type = terms.prim_syntax_type
 local prim_environment_type = terms.prim_environment_type
+local prim_typed_term_type = terms.prim_typed_term_type
+local prim_target_type = terms.prim_target_type
 local prim_inferrable_term_type = terms.prim_inferrable_term_type
 
 local gen = require "./terms-generators"
@@ -25,6 +27,8 @@ local value_array = array(value)
 local primitive_array = array(gen.any_lua_type)
 local usage_array = array(gen.builtin_number)
 local string_array = array(gen.builtin_string)
+
+local internals_interface = require "./internals-interface"
 
 --DEBUG
 do
@@ -91,7 +95,11 @@ local function get_level(t)
 	return 0
 end
 
-local function substitute_inner(val, index_base, index_offset)
+---@param val any an alicorn value
+---@param mappings table the placeholder we are trying to get rid of by substituting
+---@param context_len integer number of bindings in the runtime context already used - needed for closures
+---@return unknown a typed term
+local function substitute_inner(val, mappings, context_len)
 	if val:is_quantity_type() then
 		return typed_term.literal(val)
 	elseif val:is_quantity() then
@@ -105,7 +113,7 @@ local function substitute_inner(val, index_base, index_offset)
 	elseif val:is_qtype() then
 		local quantity, type = val:unwrap_qtype()
 		quantity = typed_term.literal(quantity)
-		type = substitute_inner(type, index_base, index_offset)
+		type = substitute_inner(type, mappings, context_len)
 		return typed_term.qtype(quantity, type)
 	elseif val:is_param_info_type() then
 		return typed_term.literal(val)
@@ -119,42 +127,56 @@ local function substitute_inner(val, index_base, index_offset)
 		return typed_term.literal(val)
 	elseif val:is_pi() then
 		local param_type, param_info, result_type, result_info = val:unwrap_pi()
-		param_type = substitute_inner(param_type, index_base, index_offset)
-		param_info = substitute_inner(param_info, index_base, index_offset)
-		result_type = substitute_inner(result_type, index_base, index_offset)
-		result_info = substitute_inner(result_info, index_base, index_offset)
+		param_type = substitute_inner(param_type, mappings, context_len)
+		param_info = substitute_inner(param_info, mappings, context_len)
+		result_type = substitute_inner(result_type, mappings, context_len)
+		result_info = substitute_inner(result_info, mappings, context_len)
 		return typed_term.pi(param_type, param_info, result_type, result_info)
 	elseif val:is_closure() then
-		return typed_term.literal(val)
+		local ctxt = val.capture
+		local unique = {}
+		local arg = value.neutral(neutral_value.free(free.unique(unique)))
+		val = apply_value(val, arg)
+		print("applied closure during substitution", val)
+
+		-- Here we need to add the new arg placeholder to a map of things to substitute
+		-- otherwise it would be left as a free.unique in the result
+		mappings[unique] = typed_term.bound_variable(context_len + 1)
+		val = substitute_inner(val, mappings, context_len + 1)
+
+		-- FIXME: this results in more captures every time we substitute a closure ->
+		--   can cause non-obvious memory leaks
+		--   since we don't yet remove unused captures from closure value
+		return typed_term.lambda(val)
 	elseif val:is_name_type() then
 		return typed_term.literal(val)
 	elseif val:is_name() then
 		return typed_term.literal(val)
 	elseif val:is_operative_value() then
 		local userdata = val:unwrap_operative_value()
-		userdata = substitute_inner(userdata, index_base, index_offset)
+		userdata = substitute_inner(userdata, mappings, context_len)
 		return typed_term.operative_cons(userdata)
 	elseif val:is_operative_type() then
 		local handler, userdata_type = val:unwrap_operative_type()
-		handler = substitute_inner(handler, index_base, index_offset)
-		userdata_type = substitute_inner(userdata_type, index_base, index_offset)
+		handler = substitute_inner(handler, mappings, context_len)
+		userdata_type = substitute_inner(userdata_type, mappings, context_len)
 		return typed_term.operative_type_cons(handler, userdata_type)
 	elseif val:is_tuple_value() then
 		local elems = val:unwrap_tuple_value()
 		local res = typed_array()
 		for i, v in ipairs(elems) do
-			res:append(substitute_inner(v, index_base, index_offset))
+			res:append(substitute_inner(v, mappings, context_len))
 		end
 		return typed_term.tuple_cons(res)
 	elseif val:is_tuple_type() then
 		local decls = val:unwrap_tuple_type()
-		decls = substitute_inner(decls, index_base, index_offset)
+		decls = substitute_inner(decls, mappings, context_len)
 		return typed_term.tuple_type(decls)
 	elseif val:is_tuple_defn_type() then
 		return typed_term.literal(val)
 	elseif val:is_enum_value() then
 		local constructor, arg = val:unwrap_enum_value()
-		arg = substitute_inner(arg, index_base, index_offset)
+		arg = substitute_inner(arg, mappings, context_len)
 		return typed_term.enum_cons(constructor, arg)
 	elseif val:is_enum_type() then
 		local decls = val:unwrap_enum_type()
@@ -193,16 +215,72 @@ local function substitute_inner(val, index_base, index_offset)
 
 		if nval:is_free() then
 			local free = nval:unwrap_free()
+			local lookup
 			if free:is_placeholder() then
-				local idx = free:unwrap_placeholder()
-				if idx >= index_base then
-					return typed_term.bound_variable(index_offset + idx - index_base + 1)
-				end
+				lookup = free:unwrap_placeholder()
+			elseif free:is_unique() then
+				lookup = free:unwrap_unique()
+			else
+				error("substitute_inner NYI free with kind " .. free.kind)
 			end
+
+			local mapping = mappings[lookup]
+			if mapping then
+				return mapping
+			end
+			return typed_term.literal(val)
+		end
+
+		if nval:is_tuple_element_access_stuck() then
+			local subject, index = nval:unwrap_tuple_element_access_stuck()
+			local subject_term = substitute_inner(value.neutral(subject), mappings, context_len)
+			return typed_term.tuple_element_access(subject_term, index)
+		end
+
+		if nval:is_prim_unwrap_stuck() then
+			local boxed = nval:unwrap_prim_unwrap_stuck()
+			return typed_term.prim_unwrap(substitute_inner(value.neutral(boxed), mappings, context_len))
+		end
+
+		if nval:is_prim_wrap_stuck() then
+			local to_wrap = nval:unwrap_prim_wrap_stuck()
+			return typed_term.prim_wrap(substitute_inner(value.neutral(to_wrap), mappings, context_len))
+		end
+
+		if nval:is_prim_unwrap_stuck() then
+			local to_unwrap = nval:unwrap_prim_unwrap_stuck()
+			return typed_term.prim_unwrap(substitute_inner(value.neutral(to_unwrap), mappings, context_len))
+		end
+
+		if nval:is_prim_application_stuck() then
+			local fn, arg = nval:unwrap_prim_application_stuck()
+			return typed_term.application(
+				typed_term.literal(value.prim(fn)),
+				substitute_inner(value.neutral(arg), mappings, context_len)
+			)
+		end
+
+		if nval:is_prim_tuple_stuck() then
+			local leading, stuck, trailing = nval:unwrap_prim_tuple_stuck()
+			local elems = typed_array()
+			-- leading is an array of unwrapped prims and must already be unwrapped prim values
+			for _, elem in ipairs(leading) do
+				local elem_value = typed_term.literal(value.prim(elem))
+				elems:append(elem_value)
+			end
+			elems:append(substitute_inner(value.neutral(stuck), mappings, context_len))
+			for _, elem in ipairs(trailing) do
+				elems:append(substitute_inner(elem, mappings, context_len))
+			end
+			-- print("prim_tuple_stuck nval", nval)
+			local result = typed_term.prim_tuple_cons(elems)
+			-- print("prim_tuple_stuck result", result)
+			return result
 		end
 
 		-- TODO: deconstruct nuetral value or something
-		error("not implemented yet")
+		print("nval", nval)
+		error("substitute_inner not implemented yet val:is_neutral")
 	elseif val:is_prim() then
 		return typed_term.literal(val)
 	elseif val:is_prim_type_type() then
@@ -215,22 +293,18 @@ local function substitute_inner(val, index_base, index_offset)
 		return typed_term.literal(val)
 	elseif val:is_prim_function_type() then
 		local param_type, result_type = val:unwrap_prim_function_type()
-		param_type = substitute_inner(param_type, index_base, index_offset)
-		result_type = substitute_inner(result_type, index_base, index_offset)
+		param_type = substitute_inner(param_type, mappings, context_len)
+		result_type = substitute_inner(result_type, mappings, context_len)
 		return typed_term.prim_function_type(param_type, result_type)
-	elseif val:is_prim_boxed_type() then
-		local type = val:unwrap_prim_boxed_type()
-		type = substitute_inner(type, index_base, index_offset)
-		return typed_term.prim_boxed_type(type)
-	elseif val:is_prim_box_stuck() then
-		error("not yet implemented")
-	elseif val:is_prim_unbox_stuck() then
-		error("not yet implemented")
+	elseif val:is_prim_wrapped_type() then
+		local type = val:unwrap_prim_wrapped_type()
+		type = substitute_inner(type, mappings, context_len)
+		return typed_term.prim_wrapped_type(type)
 	elseif val:is_prim_user_defined_type() then
 		local id, family_args = val:unwrap_prim_user_defined_type()
 		local res = typed_array()
 		for i, v in ipairs(family_args) do
-			res:append(substitute_inner(v, index_base, index_offset))
+			res:append(substitute_inner(v, mappings, context_len))
 		end
 		return typed_term.prim_user_defined_type_cons(id, res)
 	elseif val:is_prim_nil_type() then
@@ -239,16 +313,21 @@ local function substitute_inner(val, index_base, index_offset)
 		return typed_term.literal(val)
 	elseif val:is_prim_tuple_type() then
 		local decls = val:unwrap_prim_tuple_type()
-		decls = substitute_inner(decls, index_base, index_offset)
+		decls = substitute_inner(decls, mappings, context_len)
 		return typed_term.prim_tuple_type(decls)
 	else
-		error "what the fuck is this???"
+		error("Unhandled value kind in substitute_inner: " .. val.kind)
 	end
 end
 
-local function substitute_type_variables(val, index_base, index_offset)
-	-- TODO: replace free_placeholder variables with bound variables
-	return value.closure(substitute_inner(val, index_base, index_offset), runtime_context())
+--for substituting a single var at index
+local function substitute_type_variables(val, index)
+	print("value before substituting (val)", val)
+	local substituted = substitute_inner(val, {
+		[index] = typed_term.bound_variable(1),
+	}, 1)
+	print("typed term after substitution (substituted)", substituted)
+	return value.closure(substituted, runtime_context())
 end
 
 local function is_type_of_types(val)
@@ -388,8 +467,8 @@ add_comparer(value.star(0).kind, value.star(0).kind, function(a, b)
 	return true
 end)
 
-add_comparer("value.prim_boxed_type", "value.prim_boxed_type", function(a, b)
-	local ok, err = fitsinto_qless(a:unwrap_prim_boxed_type(), b:unwrap_prim_boxed_type())
+add_comparer("value.prim_wrapped_type", "value.prim_wrapped_type", function(a, b)
+	local ok, err = fitsinto_qless(a:unwrap_prim_wrapped_type(), b:unwrap_prim_wrapped_type())
 	return ok, err
 end)
 
@@ -574,6 +653,7 @@ result_info:derive(unifier)
 
 value:derive(derivers.eq)
 
+---@param typechecking_context TypecheckingContext
 local function check(
 	checkable_term, -- constructed from checkable_term
 	typechecking_context, -- todo
@@ -605,12 +685,20 @@ local function check(
 		end
 		-- TODO: unify!!!!
 		if inferred_type ~= target_type then
-			local ok, err = fitsinto(inferred_type, target_type)
+			local ok, err
+			if inferred_type:is_neutral() then
+				ok, err = false, "inferred type is a neutral value"
+				-- TODO: add debugging dump to typechecking context that looks for placeholders inside inferred_type
+				-- then shows matching types and values in env if relevant?
+			else
+				ok, err = fitsinto(inferred_type, target_type)
+			end
 			if not ok then
 				print "attempting to check if terms fit for checkable_term.inferrable"
 				print("checkable_term", checkable_term)
 				print("inferred_type", inferred_type)
 				print("target_type", target_type)
+				print("typechecking_context", typechecking_context:format_names())
 				error(
 					"check: mismatch in inferred and target type for "
 						.. inferrable_term.kind
@@ -635,13 +723,15 @@ local function check(
 		local new_elements = typed_array()
 		local tuple_elems = value_array()
 		for i, v in ipairs(elements) do
-			local next_elem = apply_value(elem_type_closures[i], value.tuple_value(tuple_elems))
-			tuple_elems:append(next_elem)
+			local tuple_elem_type = apply_value(elem_type_closures[i], value.tuple_value(tuple_elems))
 
-			local el_usages, el_term = check(v, typechecking_context, next_elem)
+			local el_usages, el_term = check(v, typechecking_context, tuple_elem_type)
 
 			add_arrays(usages, el_usages)
 			new_elements:append(el_term)
+
+			local new_elem = evaluate(el_term, typechecking_context.runtime_context)
+			tuple_elems:append(new_elem)
 		end
 		-- TODO: handle quantities
 		return usages, typed_term.tuple_cons(new_elements)
@@ -663,9 +753,7 @@ local function check(
 		local tuple_elems = value_array()
 		for i, v in ipairs(elements) do
 			local tuple_elem_type = apply_value(elem_type_closures[i], value.tuple_value(tuple_elems))
-			--tuple_elems:append(tuple_elem_type)
 
-			print("tuple_elem_type", tuple_elem_type)
 			local el_usages, el_term = check(v, typechecking_context, tuple_elem_type)
 
 			add_arrays(usages, el_usages)
@@ -740,6 +828,10 @@ function apply_value(f, arg)
 end
 
 local function index_tuple_value(subject, index)
+	if terms.value.value_check(subject) ~= true then
+		error("index_tuple_value, subject: expected an alicorn value")
+	end
+
 	if subject:is_tuple_value() then
 		local elems = subject:unwrap_tuple_value()
 		return elems[index]
@@ -886,6 +978,7 @@ local function nearest_star_level(typ)
 	elseif typ:is_star() then
 		return typ:unwrap_star()
 	else
+		print(typ.kind, typ)
 		error "unknown sort in nearest_star, please expand or build a proper least upper bound"
 	end
 end
@@ -916,18 +1009,30 @@ function infer(
 		usage_counts[index] = 1
 		local bound = typed_term.bound_variable(index)
 		return typeof_bound, usage_counts, bound
+	elseif inferrable_term:is_annotated() then
+		local checkable_term, inferrable_target_type = inferrable_term:unwrap_annotated()
+		local type_of_type, usages, target_typed_term = infer(inferrable_target_type, typechecking_context)
+		local target_type = evaluate(target_typed_term, typechecking_context.runtime_context)
+		return target_type, check(checkable_term, typechecking_context, target_type)
 	elseif inferrable_term:is_typed() then
 		return inferrable_term:unwrap_typed()
 	elseif inferrable_term:is_annotated_lambda() then
-		local param_name, param_annotation, body = inferrable_term:unwrap_annotated_lambda()
+		local param_name, param_annotation, body, anchor = inferrable_term:unwrap_annotated_lambda()
 		local _, _, param_term = infer(param_annotation, typechecking_context)
-		local param_value = evaluate(param_term, typechecking_context:get_runtime_context())
+		local param_qtype = evaluate(param_term, typechecking_context:get_runtime_context())
 		-- TODO: also handle neutral values, for inference of qtype
-		local param_quantity, param_type = param_value:unwrap_qtype()
+		local param_quantity, param_type = param_qtype:unwrap_qtype()
 		local param_quantity = param_quantity:unwrap_quantity()
-		local inner_context = typechecking_context:append(param_name, param_value)
+		local inner_context = typechecking_context:append(param_name, param_qtype, nil, anchor)
 		local body_type, body_usages, body_term = infer(body, inner_context)
-		local result_type = substitute_type_variables(body_type, #inner_context, 0)
+
+		-- FIXME: remove me after the qtype refactor that fixes inferring the type of a qtype
+		-- this is a bodge
+		if body_type:is_qtype() and body_type.type:is_qtype() then
+			body_type = body_type.type
+		end
+
+		local result_type = substitute_type_variables(body_type, #inner_context)
 		local body_usages_param = body_usages[#body_usages]
 		local lambda_usages = body_usages:copy(1, #body_usages - 1)
 		if param_quantity:is_erased() then
@@ -943,7 +1048,7 @@ function infer(
 		else
 			error("infer: unknown quantity")
 		end
-		local lambda_type = value.pi(param_value, param_info_explicit, result_type, result_info_pure)
+		local lambda_type = value.pi(param_qtype, param_info_explicit, result_type, result_info_pure)
 		local lambda_term = typed_term.lambda(body_term)
 		-- TODO: handle quantities
 		return unrestricted(lambda_type), lambda_usages, lambda_term
@@ -962,14 +1067,15 @@ function infer(
 		-- print("inferring a qtype")
 		-- print(inferrable_term:pretty_print())
 		-- print(qtype:pretty_print())
-		return qtype_type, qtype_usages, qtype
+		return unrestricted(type_type), qtype_usages, qtype
 	elseif inferrable_term:is_pi() then
-		error("infer: nyi")
 		local param_type, param_info, result_type, result_info = inferrable_term:unwrap_pi()
 		local param_type_type, param_type_usages, param_type_term = infer(param_type, typechecking_context)
-		local param_info_usages, param_info_term = check(param_info, typechecking_context, value.param_info_type)
+		local param_info_usages, param_info_term =
+			check(param_info, typechecking_context, unrestricted(value.param_info_type))
 		local result_type_type, result_type_usages, result_type_term = infer(result_type, typechecking_context)
-		local result_info_usages, result_info_term = check(result_info, typechecking_context, value.result_info_type)
+		local result_info_usages, result_info_term =
+			check(result_info, typechecking_context, unrestricted(value.result_info_type))
 		local result_type_type_quantity, result_type_type_base = result_type_type:unwrap_qtype()
 		if not result_type_type_base:is_pi() then
 			error "result type of a pi term must infer to a pi because it must be callable"
@@ -978,7 +1084,7 @@ function infer(
 		local result_type_param_type, result_type_param_info, result_type_result_type, result_type_result_info =
 			result_type_type_base:unwrap_pi()
 
-		if not result_type_result_info:unwrap_result_info():is_pure() then
+		if not result_type_result_info:unwrap_result_info().purity:is_pure() then
 			error "result type computation must be pure for now"
 		end
 
@@ -989,8 +1095,16 @@ function infer(
 				"inferrable pi type's param type doesn't fit into the result type function's parameters because " .. err
 			)
 		end
-		local sort =
-			value.star(math.max(nearest_star_level(param_type_type), nearest_star_level(result_type_result_type), 0))
+		local result_type_result_type_result =
+			apply_value(result_type_result_type, evaluate(param_type_term, typechecking_context.runtime_context))
+		-- FIXME: remove the .type bodges once qtype issues are fixed
+		local sort = value.star(
+			math.max(
+				nearest_star_level(param_type_type.type.type),
+				nearest_star_level(result_type_result_type_result.type),
+				0
+			)
+		)
 
 		local term = typed_term.pi(param_type_term, param_info_term, result_type_term, result_info_term)
 
@@ -1021,11 +1135,24 @@ function infer(
 			local application = typed_term.application(f_term, arg_term)
 
 			-- check already checked for us so no fitsinto
-			local application_result_type =
-				apply_value(f_result_type, evaluate(arg_term, typechecking_context:get_runtime_context()))
+			local arg_value = evaluate(arg_term, typechecking_context:get_runtime_context())
+			local application_result_type = apply_value(f_result_type, arg_value)
+
+			print("arg_value", arg_value)
+			print("f_result_type", f_result_type)
+			print("application_result_type", application_result_type)
+			if value.value_check(application_result_type) ~= true then
+				local bindings = typechecking_context:get_runtime_context().bindings
+				-- for i = 1, bindings:len() do
+				-- 	print("runtime_context.bindings." .. tostring(i), bindings:get(i))
+				-- end
+				error("application_result_type isn't a value inferring application of pi type")
+			end
 			return application_result_type, application_usages, application
 		elseif f_type:is_prim_function_type() then
 			print "inferring application of primitive function"
+			print("typechecking_context")
+			typechecking_context:dump_names()
 			print(f_type:pretty_print())
 			print(arg:pretty_print())
 			local f_param_type, f_result_type_closure = f_type:unwrap_prim_function_type()
@@ -1040,6 +1167,9 @@ function infer(
 			-- check already checked for us so no fitsinto
 			local f_result_type =
 				apply_value(f_result_type_closure, evaluate(arg_term, typechecking_context:get_runtime_context()))
+			if value.value_check(f_result_type) ~= true then
+				error("application_result_type isn't a value inferring application of prim_function_type")
+			end
 			return f_result_type, application_usages, application
 		else
 			p(f_type)
@@ -1057,7 +1187,7 @@ function infer(
 			local el_type, el_usages, el_term = infer(v, typechecking_context)
 			type_data = value.enum_value(
 				"cons",
-				tup_val(type_data, substitute_type_variables(el_type, #typechecking_context + 1, 0))
+				tup_val(type_data, substitute_type_variables(el_type, #typechecking_context + 1))
 			)
 			add_arrays(usages, el_usages)
 			new_elements:append(el_term)
@@ -1085,7 +1215,7 @@ function infer(
 			print(el_type:pretty_print())
 			type_data = value.enum_value(
 				"cons",
-				tup_val(type_data, substitute_type_variables(el_type, #typechecking_context + 1, 0))
+				tup_val(type_data, substitute_type_variables(el_type, #typechecking_context + 1))
 			)
 			add_arrays(usages, el_usages)
 			new_elements:append(el_term)
@@ -1134,7 +1264,7 @@ function infer(
 			local field_type, field_usages, field_term = infer(v, typechecking_context)
 			type_data = value.enum_value(
 				"cons",
-				tup_val(type_data, value.name(k), substitute_type_variables(field_type, #typechecking_context + 1, 0))
+				tup_val(type_data, value.name(k), substitute_type_variables(field_type, #typechecking_context + 1))
 			)
 			add_arrays(usages, field_usages)
 			new_fields[k] = field_term
@@ -1274,8 +1404,14 @@ function infer(
 			unrestricted(
 				value.tuple_type(
 					cons(
-						cons(empty, const_combinator(unrestricted(prim_syntax_type))),
-						const_combinator(unrestricted(prim_environment_type))
+						cons(
+							cons(
+								cons(empty, const_combinator(unrestricted(prim_syntax_type))),
+								const_combinator(unrestricted(prim_environment_type))
+							),
+							const_combinator(unrestricted(prim_typed_term_type))
+						),
+						const_combinator(unrestricted(prim_target_type))
 					)
 				)
 			),
@@ -1316,8 +1452,8 @@ function infer(
 			new_family_args:append(e_term)
 		end
 		return value.prim_type_type, result_usages, typed_term.prim_user_defined_type_cons(id, new_family_args)
-	elseif inferrable_term:is_prim_boxed_type() then
-		local type_inf = inferrable_term:unwrap_prim_boxed_type()
+	elseif inferrable_term:is_prim_wrapped_type() then
+		local type_inf = inferrable_term:unwrap_prim_wrapped_type()
 		local content_type_type, content_type_usages, content_type_term = infer(type_inf, typechecking_context)
 		if not is_type_of_types(content_type_type) then
 			error "infer: type being boxed must be a type"
@@ -1325,20 +1461,33 @@ function infer(
 		local quantity, backing_type = content_type_type:unwrap_qtype()
 		return value.qtype(quantity, value.prim_type_type),
 			content_type_usages,
-			typed_term.prim_boxed_type(content_type_term)
-	elseif inferrable_term:is_prim_box() then
-		local content = inferrable_term:unwrap_prim_box()
+			typed_term.prim_wrapped_type(content_type_term)
+	elseif inferrable_term:is_prim_wrap() then
+		local content = inferrable_term:unwrap_prim_wrap()
 		local content_type, content_usages, content_term = infer(content, typechecking_context)
 		local quantity, backing_type = content_type:unwrap_qtype()
-		return value.qtype(quantity, value.prim_boxed_type(backing_type)),
+		return value.qtype(quantity, value.prim_wrapped_type(backing_type)),
 			content_usages,
-			typed_term.prim_box(content_term)
-	elseif inferrable_term:is_prim_unbox() then
-		local container = inferrable_term:unwrap_prim_unbox()
+			typed_term.prim_wrap(content_term)
+	elseif inferrable_term:is_prim_unstrict_wrap() then
+		local content = inferrable_term:unwrap_prim_wrap()
+		local content_type, content_usages, content_term = infer(content, typechecking_context)
+		local quantity, backing_type = content_type:unwrap_qtype()
+		return value.qtype(quantity, value.prim_unstrict_wrapped_type(backing_type)),
+			content_usages,
+			typed_term.prim_unstrict_wrap(content_term)
+	elseif inferrable_term:is_prim_unwrap() then
+		local container = inferrable_term:unwrap_prim_unwrap()
 		local container_type, container_usages, container_term = infer(container, typechecking_context)
 		local quantity, backing_type = container_type:unwrap_qtype()
-		local content_type = backing_type:unwrap_prim_boxed_type()
-		return value.qtype(quantity, content_type), container_usages, typed_term.prim_unbox(container_term)
+		local content_type = backing_type:unwrap_prim_wrapped_type()
+		return value.qtype(quantity, content_type), container_usages, typed_term.prim_unwrap(container_term)
+	elseif inferrable_term:is_prim_unstrict_unwrap() then
+		local container = inferrable_term:unwrap_prim_unwrap()
+		local container_type, container_usages, container_term = infer(container, typechecking_context)
+		local quantity, backing_type = container_type:unwrap_qtype()
+		local content_type = backing_type:unwrap_prim_unstrict_wrapped_type()
+		return value.qtype(quantity, content_type), container_usages, typed_term.prim_unstrict_unwrap(container_term)
 	elseif inferrable_term:is_prim_if() then
 		local subject, consequent, alternate = inferrable_term:unwrap_prim_if()
 		-- for each thing in typechecking context check if it == the subject, replace with literal true
@@ -1364,7 +1513,8 @@ function infer(
 		-- print(inferrable_term:pretty_print())
 		local name, expr, body = inferrable_term:unwrap_let()
 		local exprtype, exprusages, exprterm = infer(expr, typechecking_context)
-		typechecking_context = typechecking_context:append(name, exprtype)
+		typechecking_context =
+			typechecking_context:append(name, exprtype, evaluate(exprterm, typechecking_context.runtime_context))
 		local bodytype, bodyusages, bodyterm = infer(body, typechecking_context)
 
 		local result_usages = usage_array()
@@ -1373,7 +1523,7 @@ function infer(
 		add_arrays(result_usages, bodyusages)
 		return bodytype, result_usages, terms.typed_term.let(exprterm, bodyterm)
 	elseif inferrable_term:is_prim_intrinsic() then
-		local source, type = inferrable_term:unwrap_prim_intrinsic()
+		local source, type, anchor = inferrable_term:unwrap_prim_intrinsic()
 		local source_usages, source_term = check(source, typechecking_context, unrestricted(value.prim_string_type))
 		local type_type, type_usages, type_term = infer(type, typechecking_context) --check(type, typechecking_context, value.qtype_type(0))
 
@@ -1384,7 +1534,7 @@ function infer(
 		--error "weird type"
 		-- FIXME: type_type, source_type are ignored, need checked?
 		local type_val = evaluate(type_term, typechecking_context.runtime_context)
-		return type_val, source_usages, typed_term.prim_intrinsic(source_term)
+		return type_val, source_usages, typed_term.prim_intrinsic(source_term, anchor)
 	elseif inferrable_term:is_level_max() then
 		local arg_type_a, arg_usages_a, arg_term_a = infer(inferrable_term.level_a, typechecking_context)
 		local arg_type_b, arg_usages_b, arg_term_b = infer(inferrable_term.level_b, typechecking_context)
@@ -1537,6 +1687,7 @@ function evaluate(typed_term, runtime_context)
 				stuck_element = element_value:unwrap_neutral()
 				trailing_values = value_array()
 			else
+				print("element_value", element_value)
 				error("evaluate, is_prim_tuple_cons, element_value: expected a primitive value")
 			end
 		end
@@ -1577,6 +1728,12 @@ function evaluate(typed_term, runtime_context)
 			error("evaluate, is_tuple_elim, subject_value: expected a tuple")
 		end
 		return evaluate(body, inner_context)
+	elseif typed_term:is_tuple_element_access() then
+		local tuple_term, index = typed_term:unwrap_tuple_element_access()
+		print("tuple_element_access tuple_term", tuple_term)
+		local tuple = evaluate(tuple_term, runtime_context)
+		print("tuple_element_access tuple_term", tuple)
+		return index_tuple_value(tuple, index)
 	elseif typed_term:is_tuple_type() then
 		local definition_term = typed_term:unwrap_tuple_type()
 		local definition = evaluate(definition_term, runtime_context)
@@ -1675,26 +1832,56 @@ function evaluate(typed_term, runtime_context)
 			new_family_args:append(evaluate(v, runtime_context))
 		end
 		return value.prim_user_defined_type(id, new_family_args)
-	elseif typed_term:is_prim_boxed_type() then
-		local type_term = typed_term:unwrap_prim_boxed_type()
+	elseif typed_term:is_prim_wrapped_type() then
+		local type_term = typed_term:unwrap_prim_wrapped_type()
 		local type_value = evaluate(type_term, runtime_context)
 		local quantity, backing_type = type_value:unwrap_qtype()
-		return value.prim_boxed_type(backing_type)
-	elseif typed_term:is_prim_box() then
-		local content = typed_term:unwrap_prim_box()
-		return value.prim(evaluate(content, runtime_context))
-	elseif typed_term:is_prim_unbox() then
-		local unwrapped = typed_term:unwrap_prim_unbox()
+		return value.prim_wrapped_type(backing_type)
+	elseif typed_term:is_prim_unstrict_wrapped_type() then
+		local type_term = typed_term:unwrap_prim_unstrict_wrapped_type()
+		local type_value = evaluate(type_term, runtime_context)
+		local quantity, backing_type = type_value:unwrap_qtype()
+		return value.prim_wrapped_type(backing_type)
+	elseif typed_term:is_prim_wrap() then
+		local content = typed_term:unwrap_prim_wrap()
+		local content_val = evaluate(content, runtime_context)
+		if content_val:is_neutral() then
+			local nval = content_val:unwrap_neutral()
+			return value.neutral(neutral_value.prim_wrap_stuck(nval))
+		end
+		return value.prim(content_val)
+	elseif typed_term:is_prim_unstrict_wrap() then
+		local content = typed_term:unwrap_prim_unstrict_wrap()
+		local content_val = evaluate(content, runtime_context)
+		return value.prim(content_val)
+	elseif typed_term:is_prim_unwrap() then
+		local unwrapped = typed_term:unwrap_prim_unwrap()
 		local unwrap_val = evaluate(unwrapped, runtime_context)
 		if not unwrap_val.as_prim then
 			print("unwrapped", unwrapped, unwrap_val)
-			error "evaluate, is_prim_unbox: missing as_prim on unwrapped prim_unbox"
+			error "evaluate, is_prim_unwrap: missing as_prim on unwrapped prim_unwrap"
 		end
 		if unwrap_val:is_prim() then
 			return unwrap_val:unwrap_prim()
 		elseif unwrap_val:is_neutral() then
 			local nval = unwrap_val:unwrap_neutral()
-			return value.neutral(neutral_value.prim_unbox_stuck(nval))
+			return value.neutral(neutral_value.prim_unwrap_stuck(nval))
+		else
+			print("unrecognized value in unbox", unwrap_val)
+			error "invalid value in unbox, must be prim or neutral"
+		end
+	elseif typed_term:is_prim_unstrict_unwrap() then
+		local unwrapped = typed_term:unwrap_prim_unstrict_unwrap()
+		local unwrap_val = evaluate(unwrapped, runtime_context)
+		if not unwrap_val.as_prim then
+			print("unwrapped", unwrapped, unwrap_val)
+			error "evaluate, is_prim_unwrap: missing as_prim on unwrapped prim_unwrap"
+		end
+		if unwrap_val:is_prim() then
+			return unwrap_val:unwrap_prim()
+		elseif unwrap_val:is_neutral() then
+			local nval = unwrap_val:unwrap_neutral()
+			return value.neutral(neutral_value.prim_unwrap_stuck(nval))
 		else
 			print("unrecognized value in unbox", unwrap_val)
 			error "invalid value in unbox, must be prim or neutral"
@@ -1704,20 +1891,23 @@ function evaluate(typed_term, runtime_context)
 		local expr_value = evaluate(expr, runtime_context)
 		return evaluate(body, runtime_context:append(expr_value))
 	elseif typed_term:is_prim_intrinsic() then
-		local source = typed_term:unwrap_prim_intrinsic()
+		local source, anchor = typed_term:unwrap_prim_intrinsic()
 		local source_val = evaluate(source, runtime_context)
 		if source_val:is_prim() then
 			local source_str = source_val:unwrap_prim()
-			return value.prim(assert(load(source_str, "prim_intrinsic", "t", {
-				assert = assert,
-				p = p,
-				print = print,
-				terms = terms,
-				terms_gen = gen,
-			}))())
+			local load_env = {}
+			for k, v in pairs(_G) do
+				load_env[k] = v
+			end
+			for k, v in pairs(internals_interface) do
+				load_env[k] = v
+			end
+			local require_generator = require "require"
+			load_env.require = require_generator(anchor.sourceid)
+			return value.prim(assert(load(source_str, "prim_intrinsic", "t", load_env))())
 		elseif source_val:is_neutral() then
 			local source_neutral = source_val:unwrap_neutral()
-			return value.neutral(neutral_value.prim_intrinsic_stuck(source_neutral))
+			return value.neutral(neutral_value.prim_intrinsic_stuck(source_neutral, anchor))
 		else
 			error "Tried to load an intrinsic with something that isn't a string"
 		end
@@ -1793,7 +1983,7 @@ function evaluate(typed_term, runtime_context)
   ]]
 end
 
-return {
+local evaluator = {
 	fitsinto = fitsinto,
 	extract_tuple_elem_type_closures = extract_tuple_elem_type_closures,
 	const_combinator = const_combinator,
@@ -1804,3 +1994,5 @@ return {
 	apply_value = apply_value,
 	index_tuple_value = index_tuple_value,
 }
+internals_interface.evaluator = evaluator
+return evaluator

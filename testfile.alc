@@ -1,7 +1,3 @@
-#let x = 621
-#let y = 926
-#let prim-add = +
-
 let prim-arith-binop = (prim-func-type (a : prim-number) (b : prim-number) -> (c : prim-number))
 let prim-sub = (intrinsic "return function(a, b) return a - b end" : prim-arith-binop)
 
@@ -15,8 +11,19 @@ let kitty = (ifhole "idk")
 #let foo = (record (bar = 5) (baz = 6))
 #let subbed = prim-sub foo.bar y
 
-# this should error becaused prim-type is not a prim-type and therefore can't be an arg to a prim-func-type
-# but it doesn't.
+let prim-string-wrap-get =
+	intrinsic
+		""""
+			return function()
+				return terms.value.qtype(
+					terms.value.quantity(terms.quantity.unrestricted),
+					terms.value.prim_string_type)
+			end
+		:
+		prim-func-type -> (res : (wrapped prim-type))
+let (prim-string-wrap) = (prim-string-wrap-get)
+let prim-string = (unwrap prim-type prim-string-wrap)
+
 let prim-array-type =
 	intrinsic
 		""""
@@ -36,89 +43,220 @@ let prim-array-type =
 			end
 			return mktype
 		:
-		prim-func-type (T : (boxed prim-type)) -> (array : (boxed prim-type))
+		prim-func-type (T : (unstrict-wrapped prim-type)) -> (array : (unstrict-wrapped prim-type))
 
 let array-type =
 	lambda ((T : prim-type))
-		let (typ) = (prim-array-type (box prim-type T))
-		unbox prim-type typ
+		let (typ) = (prim-array-type (unstrict-wrap prim-type T))
+		unwrap prim-type typ
 
 let prim-array-set =
-	intrinsic
-		""""
-			local function array_set(_elem_type, array, index, elem)
-				array[index] = elem
-			end
-			return array_set
-		:
-		prim-func-type (T : (boxed prim-type)) (arr : (array-type (unbox prim-type T))) (index : prim-number) (elem : (unbox prim-type T)) ->
+	lambda ((T : prim-type))
+		intrinsic
+			""""
+				local function array_set(array, index, elem)
+					-- we have to clone because can't guarantee input array isn't reused
+					-- Yet. growth mindset.
+					cloned = {}
+					for i, v in ipairs(array) do
+						cloned[i] = v
+					end
+					cloned[index] = elem
+					return cloned
+				end
+				return array_set
+			:
+			prim-func-type (arr : (array-type T)) (index : prim-number) (elem : T) -> (arr : (array-type T))
 
 let prim-array-get = 
-	intrinsic
-		""""
-			local function array_get(_elem_type, array, index)
-				return array[index]
-			end
-			return array_get
-		:
-		prim-func-type (T : (boxed prim-type)) (arr : (array-type (unbox prim-type T))) (index : prim-number) ->  (elem : (unbox prim-type T))
+	lambda ((T : prim-type))
+		intrinsic
+			""""
+				local function array_get(array, index)
+					return array[index]
+				end
+				return array_get
+			:
+			prim-func-type (arr : (array-type T)) (index : prim-number) ->  (elem : T)
 
-
-let example = unbox(prim-type, box(prim-type, prim-number))
-
-let (typ) = (prim-array-type (box prim-type prim-number))
-let example = unbox(prim-type, typ)
-
-let array-set = 
-	lambda (T : prim-type, arr : (array-type T), index : prim-number, elem : T)
-		let boxed_t = box(prim-type, T)
-		let arr_ty = (array-type (unbox prim-type boxed_t))
-		let elem_ty = (unbox prim-type boxed_t)
-		let ( ) = prim-array-set(box(prim-type, T), arr, index, elem)
-
-let prim-array-new = 
-	intrinsic
-		""""
-			local function array_new(_elem_type)
-				return {}
-			end
-			return array_new
-		:
-		prim-func-type (T : (boxed prim-type)) ->  (arr : (array-type (unbox prim-type T)))
+let prim-array-new =
+	lambda ((T : prim-type))
+		intrinsic
+			""""
+				local function array_new(_elem_type)
+					return {}
+				end
+				return array_new
+			:
+			prim-func-type ->  (arr : (array-type T))
 
 let array-set = 
 	lambda (T : prim-type, arr : (array-type T), index : prim-number, elem : T)
-		let ( ) = prim-array-set(box(prim-type, T), arr, index, elem)
+		let (arr) = (prim-array-set(T) arr index elem)
+		arr
+
 let array-get = 
 	lambda (T : prim-type, arr : (array-type T), index : prim-number)
-		let (elem) = prim-array-get(box(prim-type, T), arr, index)
+		let typed-arr-get = (prim-array-get T)
+		let (elem) = typed-arr-get(arr, index)
+		(the T elem)
+
 let array-new = 
 	lambda ((T : prim-type))
-		let (elem) = prim-array-new(box(prim-type, T))
+		let (elem) = (prim-array-new(T))
 		elem
 
-# let arr = array-new(prim-number)
-# array-set(prim-number, arr, 1, 3)
-# array-set(prim-number, arr, 2, 5)
+let prim-file-read =
+	intrinsic
+		""""
+			local fs = require 'fs'
+			return fs.readFileSync
+		:
+		prim-func-type (fname : prim-string) -> (content : prim-string)
 
-#let (val) =
-#	+ x 5
+let void =
+	unwrap
+		type
+		intrinsic
+			""""
+				local val_array = terms_gen.declare_array(terms.value)
+				local decl = terms.value.enum_value("empty", terms.value.tuple_value(val_array()))
+				local basetype = terms.value.enum_type(decl)
+				local quantity = terms.value.quantity(terms.quantity.unrestricted)
+				return terms.value.qtype(quantity, basetype)
+			:
+			wrapped type
 
-#let (val) =
-#	+ val y
+let prim-unit =
+	unwrap
+		prim-type
+		intrinsic
+			""""
+				local unique_id = {name = "prim-unit"}
+				local value_array = terms_gen.declare_array(terms.value)
+				local basetype = terms.value.prim_user_defined_type(unique_id, value_array())
+				local quantity = terms.value.quantity(terms.quantity.unrestricted)
+				return terms.value.qtype(quantity, basetype)
+			:
+			wrapped prim-type
 
-#prim-sub foo.bar val
+let prim-nil =
+	intrinsic
+		""""
+			return nil
+		:
+		prim-unit
 
-let (val) = (prim-sub 5 1)
-prim-sub val 3
+let only-accept-prim-tuples-inner =
+	intrinsic
+		""""
+			local function check_prim_tuple(subject, consequent, alternate)
+				local subjectqty, subjectbase = subject:unwrap_qtype()
+				if subject:is_prim_tuple_type() then
+					return consequent
+				else
+					return alternate
+				end
+			end
+			return check_prim_tuple
+		:
+		prim-func-type
+			subject : wrapped(type)
+			consequent : wrapped(prim-type)
+			alternate : wrapped(prim-type)
+			->
+			result : wrapped(prim-type)
 
-#let number-array = (array-type (box prim-type prim-number))
+let only-accept-prim-tuples =
+	lambda (subject : wrapped(type), consequent : prim-type, alternate : prim-type)
+		let (res) =
+			only-accept-prim-tuples-inner
+				subject
+				wrap prim-type consequent
+				wrap prim-type alternate
+		unwrap prim-type res
 
-let sub = 
-	lambda (x : prim-number, y : prim-number)
-		let (val) = (prim-sub x y)
-		val
+let prim-tuple-type-to-tuple-type-inner =
+	intrinsic
+		""""
+			local function prim_tuple_to_tuple(prim_tuple_type)
+				local quantity, basetype = prim_tuple_type:unwrap_qtype()
+				local decls = basetype:unwrap_prim_tuple_type()
+				-- this conversion happens to work since the eliminator for prim tuples and tuples is the same term
+				local newbasetype = terms.value.tuple_type(decls)
+				return terms.value.qtype(quantity, newbasetype)
+			end
+			return prim_tuple_to_tuple
+		:
+		prim-func-type
+			t : wrapped(type)
+			valid :
+				only-accept-prim-tuples
+					t
+					prim-unit
+					wrapped(void)
+			->
+			res : wrapped(type)
 
-sub 5 (sub 3 2)
+let only-accept-prim-funcs-inner =
+	intrinsic
+		""""
+			local function check_prim_func(subject, consequent, alternate)
+				local subjectqty, subjectbase = subject:unwrap_qtype()
+				if subjectbase:is_prim_function_type() then
+					return consequent
+				else
+					return alternate
+				end
+			end
+			return check_prim_func
+		:
+		prim-func-type
+			subject : wrapped(type)
+			consequent : wrapped(prim-type)
+			alternate : wrapped(prim-type)
+			->
+			result : wrapped(prim-type)
 
-# sub(array-get(prim-number, arr, 2), array-get(prim-number, arr, 1))
+let only-accept-prim-funcs =
+	lambda (subject : wrapped(type), consequent : prim-type, alternate : prim-type)
+		let (res) =
+			only-accept-prim-funcs-inner
+				subject
+				wrap prim-type consequent
+				wrap prim-type alternate
+		unwrap prim-type res
+
+let get-prim-func-arg-inner =
+	intrinsic
+		""""
+			local function get_prim_func_arg(subject, valid)
+				local qty, base = subject:unwrap_qtype()
+				local param_type, result_type = base:unwrap_prim_function_type()
+				return param_type, nil
+			end
+			return get_prim_func_arg
+		:
+		prim-func-type
+			subject : wrapped(type)
+			valid :
+				only-accept-prim-funcs
+					subject
+					prim-unit
+					wrapped void
+			->
+			result : wrapped(type)
+			valid :
+				only-accept-prim-tuples
+					result
+					prim-unit
+					wrapped void
+
+let foo =
+	prim-func-type (x : prim-number) (y : prim-number) -> (res : prim-number)
+
+foo
+
+let (args valid) = get-prim-func-arg-inner(wrap(type, foo), prim-nil)
+let (newargs) = prim-tuple-type-to-tuple-type-inner(args, valid)
+newargs

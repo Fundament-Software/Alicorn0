@@ -213,7 +213,7 @@ local function expression_pairhandler(args, a, b)
 		combiner = env:get("_" + op + "_")
 	else
 		ok, combiner, env = a:match(
-			{ expression(metalanguage.accept_handler, ExpressionArgs.new(target, env)) },
+			{ expression(metalanguage.accept_handler, ExpressionArgs.new(expression_target.infer, env)) },
 			metalanguage.failure_handler,
 			nil
 		)
@@ -236,8 +236,8 @@ local function expression_pairhandler(args, a, b)
 	local ok, handler, userdata_type = type_of_term:as_operative_type()
 	if ok then
 		-- operative input: env, syntax tree, target type (if checked)
-		local tuple_args = array(gen.any_lua_type)(args, env)
-		local operative_result_val = evaluator.apply_value(handler, terms.value.prim_tuple_value(tuple_args))
+		local tuple_args = value_array(value.prim(args), value.prim(env), value.prim(term), value.prim(target))
+		local operative_result_val = evaluator.apply_value(handler, terms.value.tuple_value(tuple_args))
 		-- result should be able to be an inferred term, can fail
 		-- NYI: operative_cons in evaluator must use Maybe type once it exists
 		-- if not operative_result_val:is_enum_value() then
@@ -258,15 +258,24 @@ local function expression_pairhandler(args, a, b)
 			error "operative_result_val missing env"
 		end
 
-		-- FIXME: assert type is an inferrable term using new API once it exists
-		if not inferrable_term.value_check(data) then
-			error "tried to handle something that was not an inferrable term"
+		if target:is_check() then
+			local checkable = data
+			if inferrable_term.value_check(checkable) == true then
+				checkable = checkable_term.inferrable(checkable)
+			end
+
+			local target_type = target:unwrap_check()
+			local usage_counts, term = evaluator.check(checkable, env.typechecking_context, target_type)
+			return true, checkable_term.inferrable(inferrable_term.typed(target_type, usage_counts, term)), env
+		elseif target:is_infer() then
+			if inferrable_term.value_check(data) == true then
+				local resulting_type, usage_counts, term = infer(data, env.typechecking_context)
+
+				return true, inferrable_term.typed(resulting_type, usage_counts, term), env
+			end
+		else
+			error("NYI target " .. target.kind .. " for operative in expression_pairhandler")
 		end
-		--p("Inferring!", data.kind, env.typechecking_context)
-
-		local resulting_type, usage_counts, term = infer(data, env.typechecking_context)
-
-		return true, inferrable_term.typed(resulting_type, usage_counts, term), env
 	end
 
 	if type_of_term:is_qtype() and type_of_term.type:is_pi() then
@@ -333,6 +342,12 @@ local function expression_symbolhandler(args, name)
 	local front, rest = split_dot_accessors(name)
 	if not front then
 		local ok, val = env:get(name)
+		if not ok then
+			return ok, val, env
+		end
+		if target:is_check() then
+			return true, checkable_term.inferrable(val), env
+		end
 		return ok, val, env
 	else
 		local ok, part = env:get(front)
@@ -347,6 +362,9 @@ local function expression_symbolhandler(args, name)
 				name_array(front or name),
 				inferrable_term.bound_variable(#env.typechecking_context + 1)
 			)
+		end
+		if target:is_check() then
+			return true, checkable_term.inferrable(part), env
 		end
 		return ok, part, env
 	end
@@ -453,7 +471,7 @@ function OperativeError.new(cause, anchor, operative_name)
 	}, external_error_mt)
 end
 
----@param fn fun(syntax : any, env : Environment) : boolean, any, Environment
+---@param fn fun(syntax : any, env : Environment, target : ExpressionTarget) : boolean, any, Environment
 ---@param name string
 ---@return inferrable_term.operative_cons
 local function primitive_operative(fn, name)
@@ -463,11 +481,12 @@ local function primitive_operative(fn, name)
 		.. debuginfo.short_src
 		.. ":"
 		.. debuginfo.linedefined
-	local aborting_fn = function(syn, env)
+	local aborting_fn = function(syn, env, userdata, target)
 		if not env or not env.exit_block then
 			error("env passed to primitive_operative " .. debugstring .. " isn't an env or is nil", env)
 		end
-		local ok, res, env = fn(syn, env)
+		-- userdata isn't passed in as it's always empty for primitive operatives
+		local ok, res, env = fn(syn, env, target)
 		if not ok then
 			error(OperativeError.new(res, syn.anchor, debugstring))
 		end
@@ -495,66 +514,30 @@ local function primitive_operative(fn, name)
 	-- 2: wrap it to convert a normal tuple argument to a prim tuple
 	-- and a prim tuple result to a normal tuple
 	-- this way it can take a normal tuple and return a normal tuple
-	local nparams = 2 -- for convenience when we upgrade to 4
-	local tuple_conv_elements = typed_array()
+	local nparams = 4
+	local tuple_conv_elements = typed_array(typed_term.bound_variable(2), typed_term.bound_variable(3))
 	local prim_tuple_conv_elements = typed_array()
 	for i = 1, nparams do
 		-- + 1 because variable 1 is the argument tuple
 		-- all variables that follow are the destructured tuple
 		local var = typed_term.bound_variable(i + 1)
-		tuple_conv_elements:append(var)
 		prim_tuple_conv_elements:append(var)
 	end
 	local tuple_conv = typed_term.tuple_cons(tuple_conv_elements)
 	local prim_tuple_conv = typed_term.prim_tuple_cons(prim_tuple_conv_elements)
 	local tuple_to_prim_tuple = typed_term.tuple_elim(typed_term.bound_variable(1), nparams, prim_tuple_conv)
 	local tuple_to_prim_tuple_fn = typed_term.application(typed_prim_fn, tuple_to_prim_tuple)
-	local tuple_to_tuple_fn = typed_term.tuple_elim(tuple_to_prim_tuple_fn, nparams, tuple_conv)
+	local tuple_to_tuple_fn = typed_term.tuple_elim(tuple_to_prim_tuple_fn, 2, tuple_conv)
 	-- 3: wrap it in a closure with an empty capture, not a typed lambda
 	-- this ensures variable 1 is the argument tuple
-	local typed_fn = typed_term.literal(value.closure(tuple_to_tuple_fn, runtime_context()))
-	-- 4: wrap it in an inferrable term
-	-- note how it takes a normal tuple and returns a normal tuple
-	local cu_syntax_type = const_combinator(unrestricted(prim_syntax_type))
-	local cu_inf_type = const_combinator(unrestricted(prim_inferrable_term_type))
-	local cu_env_type = const_combinator(unrestricted(prim_environment_type))
-	local error_type = terms.prim_lua_error_type
-	local param_type = unrestricted(value.tuple_type(cons(cons(empty, cu_syntax_type), cu_env_type)))
+	local value_fn = value.closure(tuple_to_tuple_fn, runtime_context())
 
-	-- tuple_of(ok) -> prim_if(ok, prim_inferrable_term_type, error_type)
-	-- FIXME: once operative_cons makes the correct type with a Maybe, put this back and convert to Maybe
-	-- For now, we handle with a lua abort inside the primitive operative
-	-- local inf_term_or_error = value.closure(
-	-- 	typed_term.prim_if(
-	-- 		typed_term.tuple_elim(typed_term.bound_variable(3), 1, typed_term.bound_variable(4)), -- how do I get the first thing in the input tuple?
-	-- 		typed_term.bound_variable(1),
-	-- 		typed_term.bound_variable(2)
-	-- 	),
-	-- 	runtime_context():append(unrestricted(prim_inferrable_term_type)):append(error_type)
-	-- )
-	-- local result_type = const_combinator(unrestricted(value.tuple_type(
-	-- 	cons(
-	-- 		cons(
-	-- 			cons(empty, const_combinator(unrestricted(terms.value.prim_bool_type))),
-	-- 			inf_term_or_error
-	-- 		),
-	-- 		const_combinator(unrestricted(prim_environment_type))
-	-- 	)
-	-- )))
-	local result_type = const_combinator(unrestricted(value.tuple_type(cons(cons(empty, cu_inf_type), cu_env_type))))
-	local inferred_type = unrestricted(value.pi(param_type, param_info_explicit, result_type, result_info_pure))
-	local inferrable_fn = inferrable_term.typed(inferred_type, usage_array(), typed_fn)
-	-- FIXME: use prim_if here
-	-- 5: wrap it in an operative type cons and finally an operative cons
-	-- with empty userdata
 	local userdata_type = unrestricted(value.tuple_type(empty))
-	local userdata_type_term = typed_term.literal(userdata_type)
-	local userdata_type_inf = inferrable_term.typed(value.star(0), usage_array(), userdata_type_term)
-	local op_type_fn =
-		inferrable_term.operative_type_cons(terms.checkable_term.inferrable(inferrable_fn), userdata_type_inf)
-	local userdata = inferrable_term.tuple_cons(inferrable_array())
-	local op_fn = inferrable_term.operative_cons(op_type_fn, userdata)
-	return op_fn
+	return inferrable_term.typed(
+		value.operative_type(value_fn, userdata_type),
+		array(gen.builtin_number)(),
+		typed_term.operative_cons(typed_term.tuple_cons(typed_array()))
+	)
 end
 
 local function collect_tuple_pair_handler(args, a, b)
@@ -616,6 +599,9 @@ collect_tuple = metalanguage.reducer(function(syntax, args)
 				}, metalanguage.failure_handler, ExpressionArgs.new(target, env))
 			else
 				local next_elem_type = evaluator.apply_value(closures[i], value.tuple_value(tuple_symbolic_elems))
+				if next_elem_type:is_neutral() then
+					error "neutral target type"
+				end
 
 				ok, continue, next_term, syntax, env = syntax:match({
 					metalanguage.ispair(collect_tuple_pair_handler),
@@ -623,12 +609,14 @@ collect_tuple = metalanguage.reducer(function(syntax, args)
 				}, metalanguage.failure_handler, ExpressionArgs.new(expression_target.check(next_elem_type), env))
 				if ok and continue then
 					collected_terms:append(next_term)
+					print("target type for next element in tuple", next_elem_type)
+					print("term we are checking", next_term)
 					local usages, typed_elem_term = evaluator.check(next_term, env.typechecking_context, next_elem_type)
 					local elem_value = evaluator.evaluate(typed_elem_term, env.typechecking_context.runtime_context)
 					tuple_symbolic_elems:append(elem_value)
 				end
 			end
-			if not ok then
+			if not ok and type(continue) == "string" then
 				continue = continue
 					.. " (should have "
 					.. tostring(#closures)
@@ -701,8 +689,8 @@ collect_prim_tuple = metalanguage.reducer(function(syntax, args)
 					tuple_symbolic_elems:append(elem_value)
 				end
 			end
-			if not ok then
-				continue = tostring(continue) -- TODO: workarounded, fix properly!
+			if not ok and type(continue) == "string" then
+				continue = continue
 					.. " (should have "
 					.. tostring(#closures)
 					.. ", found "
@@ -843,7 +831,7 @@ local function inferred_expression(handler, env)
 	return expression(handler, ExpressionArgs.new(expression_target.infer, env))
 end
 
-return {
+local alicorn_expressions = {
 	expression = expression,
 	inferred_expression = inferred_expression,
 	-- constexpr = constexpr
@@ -857,3 +845,6 @@ return {
 	eval = eval,
 	eval_block = eval_block,
 }
+local internals_interface = require "./internals-interface"
+internals_interface.alicorn_expressions = alicorn_expressions
+return alicorn_expressions

@@ -187,6 +187,7 @@ local checkable_term = gen.declare_type()
 local inferrable_term = gen.declare_type()
 local typed_term = gen.declare_type()
 local free = gen.declare_type()
+local placeholder_debug = gen.declare_type()
 local value = gen.declare_type()
 local neutral_value = gen.declare_type()
 local binding = gen.declare_type()
@@ -246,10 +247,19 @@ end
 function TypecheckingContext:get_runtime_context()
 	return self.runtime_context
 end
-function TypecheckingContext:append(name, type, val) -- value is optional
+function TypecheckingContext:append(name, type, val, anchor) -- value is optional, anchor is optional
 	-- TODO: typecheck
 	if name == nil or type == nil then
 		error("bug!!!")
+	end
+	if value.value_check(type) ~= true then
+		print("type", type)
+		p(type)
+		for k, v in pairs(type) do
+			print(k, v)
+		end
+		print(getmetatable(type))
+		error "TypecheckingContext:append type parameter of wrong type"
 	end
 	if type:is_closure() then
 		error "BUG!!!"
@@ -257,7 +267,7 @@ function TypecheckingContext:append(name, type, val) -- value is optional
 	local copy = {
 		bindings = self.bindings:append({ name = name, type = type }),
 		runtime_context = self.runtime_context:append(
-			val or value.neutral(neutral_value.free(free.placeholder(#self + 1)))
+			val or value.neutral(neutral_value.free(free.placeholder(#self + 1, placeholder_debug(name, anchor))))
 		),
 	}
 	return setmetatable(copy, typechecking_context_mt)
@@ -303,6 +313,7 @@ expression_target:define_enum("expression_target", {
 		},
 	},
 })
+
 -- terms that don't have a body yet
 binding:define_enum("binding", {
 	{ "let", {
@@ -317,12 +328,17 @@ binding:define_enum("binding", {
 		"subject",
 		inferrable_term,
 	} },
-	{ "annotated_lambda", {
-		"param_name",
-		gen.builtin_string,
-		"param_annotation",
-		inferrable_term,
-	} },
+	{
+		"annotated_lambda",
+		{
+			"param_name",
+			gen.builtin_string,
+			"param_annotation",
+			inferrable_term,
+			"anchor",
+			gen.anchor_type,
+		},
+	},
 })
 -- checkable terms need a target type to typecheck against
 checkable_term:define_enum("checkable", {
@@ -359,6 +375,8 @@ inferrable_term:define_enum("inferrable", {
 			inferrable_term,
 			"body",
 			inferrable_term,
+			"anchor",
+			gen.anchor_type,
 		},
 	},
 	{ "qtype", {
@@ -488,9 +506,12 @@ inferrable_term:define_enum("inferrable", {
 			-- primitive functions can only be pure for now
 		},
 	},
-	{ "prim_boxed_type", { "type", inferrable_term } },
-	{ "prim_box", { "content", inferrable_term } },
-	{ "prim_unbox", { "container", inferrable_term } },
+	{ "prim_wrapped_type", { "type", inferrable_term } },
+	{ "prim_unstrict_wrapped_type", { "type", inferrable_term } },
+	{ "prim_wrap", { "content", inferrable_term } },
+	{ "prim_unstrict_wrap", { "content", inferrable_term } },
+	{ "prim_unwrap", { "container", inferrable_term } },
+	{ "prim_unstrict_unwrap", { "container", inferrable_term } },
 	{
 		"prim_if",
 		{
@@ -509,6 +530,8 @@ inferrable_term:define_enum("inferrable", {
 			checkable_term,
 			"type",
 			inferrable_term, --checkable_term,
+			"anchor",
+			gen.anchor_type,
 		},
 	},
 	{ "hole" },
@@ -570,6 +593,12 @@ typed_term:define_enum("typed", {
 		gen.builtin_number,
 		"body",
 		typed_term,
+	} },
+	{ "tuple_element_access", {
+		"subject",
+		typed_term,
+		"index",
+		gen.builtin_number,
 	} },
 	{ "tuple_type", { "definition", typed_term } },
 	{ "record_cons", { "fields", map(gen.builtin_string, typed_term) } },
@@ -646,9 +675,12 @@ typed_term:define_enum("typed", {
 			-- primitive functions can only be pure for now
 		},
 	},
-	{ "prim_boxed_type", { "type", typed_term } },
-	{ "prim_box", { "content", typed_term } },
-	{ "prim_unbox", { "container", typed_term } },
+	{ "prim_wrapped_type", { "type", typed_term } },
+	{ "prim_unstrict_wrapped_type", { "type", typed_term } },
+	{ "prim_wrap", { "content", typed_term } },
+	{ "prim_unwrap", { "container", typed_term } },
+	{ "prim_unstrict_wrap", { "content", typed_term } },
+	{ "prim_unstrict_unwrap", { "container", typed_term } },
 	{ "prim_if", {
 		"subject",
 		typed_term,
@@ -658,6 +690,8 @@ typed_term:define_enum("typed", {
 	{ "prim_intrinsic", {
 		"source",
 		typed_term,
+		"anchor",
+		gen.anchor_type,
 	} },
 })
 
@@ -665,9 +699,16 @@ local unique_id = gen.declare_foreign(function(val)
 	return type(val) == "table"
 end)
 
+placeholder_debug:define_record("placeholder_debug", { "name", gen.builtin_string, "anchor", gen.anchor_type })
+
 free:define_enum("free", {
 	{ "metavariable", { "metavariable", metavariable_type } },
-	{ "placeholder", { "index", gen.builtin_number } },
+	{ "placeholder", {
+		"index",
+		gen.builtin_number,
+		"debug",
+		placeholder_debug,
+	} },
 	{ "unique", { "id", unique_id } },
 	-- TODO: axiom
 })
@@ -834,9 +875,8 @@ value:define_enum("value", {
 			-- primitive functions can only be pure for now
 		},
 	},
-	{ "prim_boxed_type", { "type", value } },
-	{ "prim_box_stuck", { "content", neutral_value } },
-	{ "prim_unbox_stuck", { "container", neutral_value } },
+	{ "prim_wrapped_type", { "type", value } },
+	{ "prim_unstrict_wrapped_type", { "type", value } },
 	{ "prim_user_defined_type", {
 		"id",
 		prim_user_defined_id,
@@ -920,11 +960,11 @@ neutral_value:define_enum("neutral_value", {
 	{ "prim_intrinsic_stuck", {
 		"source",
 		neutral_value,
+		"anchor",
+		gen.anchor_type,
 	} },
-	{ "prim_unbox_stuck", {
-		"subject",
-		neutral_value,
-	} },
+	{ "prim_wrap_stuck", { "content", neutral_value } },
+	{ "prim_unwrap_stuck", { "container", neutral_value } },
 })
 
 neutral_value.free.metavariable = function(mv)
@@ -933,6 +973,8 @@ end
 
 local prim_syntax_type = value.prim_user_defined_type({ name = "syntax" }, array(value)())
 local prim_environment_type = value.prim_user_defined_type({ name = "environment" }, array(value)())
+local prim_typed_term_type = value.prim_user_defined_type({ name = "typed_term" }, array(value)())
+local prim_target_type = value.prim_user_defined_type({ name = "target" }, array(value)())
 local prim_inferrable_term_type = value.prim_user_defined_type({ name = "inferrable_term" }, array(value)())
 -- return ok, err
 local prim_lua_error_type = value.prim_user_defined_type({ name = "lua_error_type" }, array(value)())
@@ -958,6 +1000,8 @@ for _, deriver in ipairs { derivers.as, derivers.pretty_print, derivers.eq } do
 	neutral_value:derive(deriver)
 	binding:derive(deriver)
 	expression_target:derive(deriver)
+	placeholder_debug:derive(deriver)
+	purity:derive(deriver)
 end
 
 --[[
@@ -975,7 +1019,7 @@ local tuple_defn = value.enum_value("variant",
 	)
 )]]
 
-return {
+local terms = {
 	typechecker_state = typechecker_state, -- fn (constructor)
 	checkable_term = checkable_term, -- {}
 	inferrable_term = inferrable_term, -- {}
@@ -991,6 +1035,8 @@ return {
 	expression_target = expression_target,
 	prim_syntax_type = prim_syntax_type,
 	prim_environment_type = prim_environment_type,
+	prim_typed_term_type = prim_typed_term_type,
+	prim_target_type = prim_target_type,
 	prim_inferrable_term_type = prim_inferrable_term_type,
 	prim_lua_error_type = prim_lua_error_type,
 	unit_val = unit_val,
@@ -1002,3 +1048,6 @@ return {
 	runtime_context_type = runtime_context_type,
 	typechecking_context_type = typechecking_context_type,
 }
+local internals_interface = require "./internals-interface"
+internals_interface.terms = terms
+return terms

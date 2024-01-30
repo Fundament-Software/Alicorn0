@@ -338,6 +338,17 @@ local array_methods = {
 	append = function(self, val)
 		self[self.n + 1] = val
 	end,
+	eq = function(self, other)
+		if #self ~= #other then
+			return false
+		end
+		for i = 1, #self do
+			if self[i] ~= other[i] then
+				return false
+			end
+		end
+		return true
+	end,
 	copy = function(self, first, last)
 		local first = first or 1
 		local last = last or #self
@@ -432,6 +443,7 @@ local function define_array(self, value_type)
 	self.__ipairs = array_methods.ipairs
 	self.__len = array_methods.len
 	self.__tostring = self:__index("pretty_print")
+	self.__eq = array_methods.eq
 	prettyprintable:implement_on(self, {
 		print = array_prettyprintable,
 	})
@@ -480,7 +492,7 @@ local function gen_builtin(typename)
 	end)
 end
 
-return {
+local terms_gen = {
 	---@type fun(kind: string, params_with_types: ParamsWithTypes): Record
 	declare_record = new_self(define_record),
 	---@type fun(name: string, variants: Variants): Enum
@@ -497,7 +509,17 @@ return {
 	metatable_equality = metatable_equality,
 	builtin_number = gen_builtin("number"),
 	builtin_string = gen_builtin("string"),
+	builtin_function = gen_builtin("function"),
+	anchor_type = define_foreign({}, function(o)
+		if o and o.sourceid then
+			return true
+		end
+		return false
+	end),
 	any_lua_type = define_foreign({}, function()
 		return true
 	end),
 }
+local internals_interface = require "./internals-interface"
+internals_interface.terms_gen = terms_gen
+return terms_gen
