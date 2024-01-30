@@ -771,7 +771,7 @@ local function check(
 	elseif checkable_term:is_hole() then
 		print("reached a checkable hole!")
 		print("the expected type is this:")
-		print(target_type)
+		print(goal_type)
 		error("reached a checkable hole!")
 	elseif checkable_term:is_filled_hole() then
 		local inner = checkable_term:unwrap_filled_hole()
@@ -783,7 +783,7 @@ local function check(
 		print("and it evaluates to this:")
 		print(inner_val)
 		print("the expected type is this:")
-		print(target_type)
+		print(goal_type)
 		-- TODO: more printing?
 		error("reached a checkable hole!")
 	else

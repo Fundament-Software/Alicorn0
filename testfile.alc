@@ -1,10 +1,10 @@
 let prim-arith-binop = (prim-func-type (a : prim-number) (b : prim-number) -> (c : prim-number))
 let prim-sub = (intrinsic "return function(a, b) return a - b end" : prim-arith-binop)
 
-#let hole_check = (prim-sub 42 (hole))
-#let hole_filled_check = (prim-sub 42 (fhole 69))
 #let hole_infer = (hole)
-#let hole_filled_infer = (fhole "idk")
+#let hole_filled_infer = (hole "idk")
+#let hole_check = (prim-sub 42 (hole))
+#let hole_filled_check = (prim-sub 42 (hole 69))
 
 #let prim-sub = (intrinsic "return function(a, b) return a - b end" : (prim-func-type (a : prim-number) (b : prim-number) -> (c : prim-number)))
 
