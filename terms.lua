@@ -894,7 +894,12 @@ value:define_enum("value", {
 
 	-- type of key and value of key -> type of the value
 	-- {"prim_table_type"},
+
 	{ "hole_type" },
+	{ "checkable_hole", { "goal_type", value } },
+	{ "checkable_filled_hole", { "inner_type", value, "inner_val", value, "goal_type", value } },
+	{ "inferrable_hole" },
+	{ "inferrable_filled_hole", { "inner_type", value, "inner_val", value } },
 })
 
 neutral_value:define_enum("neutral_value", {
