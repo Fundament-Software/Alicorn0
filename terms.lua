@@ -896,10 +896,6 @@ value:define_enum("value", {
 	-- {"prim_table_type"},
 
 	{ "hole_type" },
-	{ "checkable_hole", { "goal_type", value } },
-	{ "checkable_filled_hole", { "inner_type", value, "inner_val", value, "goal_type", value } },
-	{ "inferrable_hole" },
-	{ "inferrable_filled_hole", { "inner_type", value, "inner_val", value } },
 })
 
 neutral_value:define_enum("neutral_value", {
@@ -975,6 +971,10 @@ neutral_value:define_enum("neutral_value", {
 	} },
 	{ "prim_wrap_stuck", { "content", neutral_value } },
 	{ "prim_unwrap_stuck", { "container", neutral_value } },
+	{ "checkable_hole", { "goal_type", value } },
+	{ "checkable_filled_hole", { "inner_type", value, "inner_val", value, "goal_type", value } },
+	{ "inferrable_hole" },
+	{ "inferrable_filled_hole", { "inner_type", value, "inner_val", value } },
 })
 
 neutral_value.free.metavariable = function(mv)
