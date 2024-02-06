@@ -769,23 +769,12 @@ local function check(
 		-- TODO open says work on other things first they will be easier
 		error("nyi")
 	elseif checkable_term:is_hole() then
-		print("reached a checkable hole!")
-		print("the expected type is this:")
-		print(goal_type)
-		error("reached a checkable hole!")
+		return usage_array(), typed_term.checkable_hole(goal_type)
 	elseif checkable_term:is_filled_hole() then
 		local inner = checkable_term:unwrap_filled_hole()
 		local inner_type, inner_usages, inner_term = infer(inner, typechecking_context)
-		local inner_val = evaluate(inner_term, typechecking_context.runtime_context)
-		print("reached a checkable filled hole!")
-		print("the type of the inner term is this:")
-		print(inner_type)
-		print("and it evaluates to this:")
-		print(inner_val)
-		print("the expected type is this:")
-		print(goal_type)
-		-- TODO: more printing?
-		error("reached a checkable hole!")
+		--local inner_val = evaluate(inner_term, typechecking_context.runtime_context)
+		return usage_array(), typed_term.checkable_filled_hole(inner_type, inner_term, goal_type)
 	else
 		error("check: unknown kind: " .. checkable_term.kind)
 	end
@@ -1560,19 +1549,12 @@ function infer(
 		end
 		return value.star(0), decl_usages, typed_term.prim_tuple_type(decl_term)
 	elseif inferrable_term:is_hole() then
-		print("reached an inferrable hole!")
-		error("reached an inferrable hole!")
+		return value.hole_type, usage_array(), typed_term.inferrable_hole
 	elseif inferrable_term:is_filled_hole() then
 		local inner = inferrable_term:unwrap_filled_hole()
 		local inner_type, inner_usages, inner_term = infer(inner, typechecking_context)
-		local inner_val = evaluate(inner_term, typechecking_context.runtime_context)
-		print("reached an inferrable filled hole!")
-		print("the type of the inner term is this:")
-		print(inner_type)
-		print("and it evaluates to this:")
-		print(inner_val)
-		-- TODO: more printing?
-		error("reached an inferrable hole!")
+		--local inner_val = evaluate(inner_term, typechecking_context.runtime_context)
+		return value.hole_type, usage_array(), typed_term.inferrable_filled_hole(inner_type, inner_term)
 	else
 		error("infer: unknown kind: " .. inferrable_term.kind)
 	end
@@ -1945,6 +1927,33 @@ function evaluate(typed_term, runtime_context)
 		local decl = typed_term:unwrap_prim_tuple_type()
 		local decl_val = evaluate(decl, runtime_context)
 		return value.prim_tuple_type(decl_val)
+	elseif typed_term:is_checkable_hole() then
+		local goal_type = typed_term:unwrap_checkable_hole()
+		print("reached a checkable hole!")
+		print("the expected type is this:")
+		print(goal_type)
+		error("reached a checkable hole!")
+	elseif typed_term:is_checkable_filled_hole() then
+		local inner_type, inner_term, goal_type = typed_term:unwrap_checkable_filled_hole()
+		print("reached a checkable filled hole!")
+		print("the type of the inner term is this:")
+		print(inner_type)
+		--print("and it evaluates to this:")
+		--print(inner_val)
+		print("the expected type is this:")
+		print(goal_type)
+		error("reached a checkable filled hole!")
+	elseif typed_term:is_inferrable_hole() then
+		print("reached an inferrable hole!")
+		error("reached an inferrable hole!")
+	elseif typed_term:is_inferrable_filled_hole() then
+		local inner_type, inner_term = typed_term:unwrap_inferrable_filled_hole()
+		print("reached an inferrable filled hole!")
+		print("the type of the inner term is this:")
+		print(inner_type)
+		--print("and it evaluates to this:")
+		--print(inner_val)
+		error("reached an inferrable filled hole!")
 	else
 		error("evaluate: unknown kind: " .. typed_term.kind)
 	end
