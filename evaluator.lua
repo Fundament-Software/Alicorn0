@@ -1400,13 +1400,13 @@ function infer(
 		return value.star(0), decl_usages, typed_term.prim_tuple_type(decl_term)
 	elseif inferrable_term:is_hole() then
 		-- TODO: value.neutral(neutral_value.free.metavariable(something)) instead of hole_type
-		return unrestricted(value.hole_type), usage_array(), typed_term.inferrable_hole
+		return value.hole_type, usage_array(), typed_term.inferrable_hole
 	elseif inferrable_term:is_filled_hole() then
 		local inner = inferrable_term:unwrap_filled_hole()
 		local inner_type, inner_usages, inner_term = infer(inner, typechecking_context)
 		-- intentionally discard usages
 		-- TODO: value.neutral(neutral_value.free.metavariable(something)) instead of hole_type
-		return unrestricted(value.hole_type), usage_array(), typed_term.inferrable_filled_hole(inner_type, inner_term)
+		return value.hole_type, usage_array(), typed_term.inferrable_filled_hole(inner_type, inner_term)
 	else
 		error("infer: unknown kind: " .. inferrable_term.kind)
 	end
