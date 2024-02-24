@@ -351,6 +351,8 @@ checkable_term:define_enum("checkable", {
 		"body",
 		checkable_term,
 	} },
+	{ "hole" },
+	{ "filled_hole", { "inner", inferrable_term } }, -- TODO: really inferrable? or checkable?
 	-- TODO: enum_cons
 })
 -- inferrable terms can have their type inferred / don't need a goal type
@@ -526,6 +528,8 @@ inferrable_term:define_enum("inferrable", {
 			gen.anchor_type,
 		},
 	},
+	{ "hole" },
+	{ "filled_hole", { "inner", inferrable_term } },
 })
 -- typed terms have been typechecked but do not store their type internally
 typed_term:define_enum("typed", {
@@ -677,6 +681,10 @@ typed_term:define_enum("typed", {
 		"anchor",
 		gen.anchor_type,
 	} },
+	{ "checkable_hole", { "goal_type", value } },
+	{ "checkable_filled_hole", { "inner_type", value, "inner_term", typed_term, "goal_type", value } },
+	{ "inferrable_hole" },
+	{ "inferrable_filled_hole", { "inner_type", value, "inner_term", typed_term } },
 })
 
 local unique_id = gen.declare_foreign(function(val)
@@ -850,6 +858,8 @@ value:define_enum("value", {
 
 	-- type of key and value of key -> type of the value
 	-- {"prim_table_type"},
+
+	{ "hole_type" },
 })
 
 neutral_value:define_enum("neutral_value", {
@@ -925,6 +935,10 @@ neutral_value:define_enum("neutral_value", {
 	} },
 	{ "prim_wrap_stuck", { "content", neutral_value } },
 	{ "prim_unwrap_stuck", { "container", neutral_value } },
+	{ "checkable_hole", { "goal_type", value } },
+	{ "checkable_filled_hole", { "inner_type", value, "inner_val", value, "goal_type", value } },
+	{ "inferrable_hole" },
+	{ "inferrable_filled_hole", { "inner_type", value, "inner_val", value } },
 })
 
 neutral_value.free.metavariable = function(mv)
