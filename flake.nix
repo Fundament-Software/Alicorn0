@@ -37,7 +37,7 @@
             cd ${./.}
             mkdir $out
             >&2 echo "Checking ${file}"
-            ${pkgs.lib.getExe' luvitpkgs.packages.${system}.luvit "luvit"} ${file}
+            ${pkgs.lib.getExe' luvitpkgs.packages.${system}.luvit "luvit"} test/${file}.lua
           '';
 
         lqc = luajit.pkgs.buildLuarocksPackage rec {
@@ -68,8 +68,8 @@
           default = hello;
         };
         checks = {
-          terms = alicorn-check "test-terms.lua";
-          derive-pretty-print = alicorn-check "test-derive-pretty-print.lua";
+          terms = alicorn-check "test-terms";
+          derive-pretty-print = alicorn-check "test-derive-pretty-print";
           formatting = pkgs.runCommandNoCC "stylua-check" { } ''
             cd ${./.}
             mkdir $out
