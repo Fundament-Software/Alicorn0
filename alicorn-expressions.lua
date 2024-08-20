@@ -1145,10 +1145,10 @@ local block = metalanguage.reducer(
 	"block"
 )
 
--- example usage of primitive_applicative
+-- example usage of host_applicative
 -- add(a, b) = a + b ->
 -- local prim_num = terms.value.prim_number_type
--- primitive_applicative(function(a, b) return a + b end, {prim_num, prim_num}, {prim_num}),
+-- host_applicative(function(a, b) return a + b end, {prim_num, prim_num}, {prim_num}),
 
 ---@param elems value[]
 ---@return value
@@ -1168,8 +1168,15 @@ end
 ---@return inferrable
 local function host_applicative(fn, params, results)
 	local literal_host_fn = terms.typed_term.literal(terms.value.host_value(fn))
-	local host_fn_type =
-		terms.value.host_function_type(build_host_type_tuple(params), build_host_type_tuple(results), result_info_pure)
+	local host_fn_type = terms.value.host_function_type(
+		build_host_type_tuple(params),
+		terms.value.closure(
+			"#hostap-params",
+			terms.typed_term.literal(build_host_type_tuple(results)),
+			terms.runtime_context()
+		),
+		result_info_pure
+	)
 	return terms.inferrable_term.typed(host_fn_type, usage_array(), literal_host_fn)
 end
 

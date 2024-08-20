@@ -58,3 +58,5 @@ local PrettyPrint = require "../pretty-printer".PrettyPrint
 local pp = PrettyPrint:new()
 pp:any(n)
 print(pp)
+
+print("Success!")

@@ -867,7 +867,7 @@ function apply_value(f, arg)
 			error("apply_value, is_host_value, arg: expected a host tuple argument")
 		end
 	else
-		error("apply_value, f: expected a function/closure")
+		error("apply_value, f: expected a function/closure, got a " .. f.kind)
 	end
 
 	error("unreachable!?")

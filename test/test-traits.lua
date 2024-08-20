@@ -18,3 +18,5 @@ local function test_trait()
 end
 
 test_trait()
+
+print("Success!")
