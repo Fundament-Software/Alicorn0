@@ -30,6 +30,7 @@
             hash = "sha256-oPU3hwSgL+d/4yW7r7maugDi+LA8QmvFN7ssEgC9B70=";
           };
         };
+        luajitWithPackages = luajit.withPackages (ps: with ps; [ luasocket lpeg inspect luaunit tl lqc ]);
         alicorn-check = file:
           pkgs.runCommandNoCC "alicorn-check-${file}" { } ''
             set -euo pipefail
@@ -114,11 +115,10 @@
 
               })
 
-              (luajit.withPackages
-                (ps: with ps; [ luasocket lpeg inspect luaunit tl lqc ]))
+              luajitWithPackages
             ];
             shellHook = self.checks.${system}.pre-commit-check.shellHook + ''
-              export LUA_PATH='${luajit}/share/lua/5.1/?.lua;./?.lua'
+              export LUA_PATH='${luajitWithPackages}/share/lua/5.1/?.lua;./?.lua'
             '';
           };
           default = alicorn;
