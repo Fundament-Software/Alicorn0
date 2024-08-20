@@ -1,6 +1,6 @@
-local metalang = require "./metalanguage"
-local testlang = require "./testlanguage"
-local format = require "./test-format-adapter"
+local metalang = require "../metalanguage"
+local testlang = require "../testlanguage"
+local format = require "../test-format-adapter"
 
 ---@class Env
 ---@field dict { [any]: any }
