@@ -1123,7 +1123,9 @@ local block = metalanguage.reducer(
 	---@return Environment?
 	function(syntax, args)
 		local goal, env = args:unwrap()
-		assert(goal:is_infer(), "NYI non-infer cases for block")
+		if not goal:is_infer() then
+			error("NYI non-infer cases for block")
+		end
 		local lastval, newval
 		local ok, continue = true, true
 		while ok and continue do
@@ -1199,8 +1201,12 @@ end
 ---@param env Environment
 ---@return any
 local function inferred_expression(handler, env)
-	assert(handler, "no handler")
-	assert(env and env.get, "no env")
+	if not handler then
+		error("no handler")
+	end
+	if not env or not env.get then
+		error("no env")
+	end
 	return expression(handler, ExpressionArgs.new(expression_goal.infer, env))
 end
 

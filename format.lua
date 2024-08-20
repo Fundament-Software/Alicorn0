@@ -400,7 +400,9 @@ end
 ---@param filename string
 ---@return FormatList?
 local function parse(input, filename)
-	assert(filename)
+	if not filename then
+		error("filename is required")
+	end
 
 	if not (string.len(input) > 0) then
 		print("empty file")
@@ -424,7 +426,7 @@ local function parse(input, filename)
 		end
 		expected = expected .. "}"
 
-		assert(false, span_error(furthest_forward.position, input, "expected " .. expected))
+		error(span_error(furthest_forward.position, input, "expected " .. expected))
 	end
 
 	return ast

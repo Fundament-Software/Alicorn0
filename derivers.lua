@@ -118,7 +118,9 @@ end]]
 		derive_print("###")
 
 		local compiled, message = load(chunk, "derive-eq_record", "t")
-		assert(compiled, message)
+		if not compiled then
+			error(message)
+		end
 		local eq_fn = compiled(eq_memoizer)
 		t.__eq = eq_fn
 
@@ -181,7 +183,9 @@ end]]
 		derive_print("###")
 
 		local compiled, message = load(chunk, "derive-eq_enum", "t")
-		assert(compiled, message)
+		if not compiled then
+			error(message)
+		end
 		local eq_fn = compiled(eq_memoizer)
 		t.__eq = eq_fn
 
@@ -234,7 +238,9 @@ local is = {
 			derive_print("###")
 
 			local compiled, message = load(chunk, "derive-is_enum", "t")
-			assert(compiled, message)
+			if not compiled then
+				error(message)
+			end
 			idx["is_" .. vname] = compiled()
 		end
 
@@ -281,7 +287,9 @@ local unwrap = {
 		derive_print("###")
 
 		local compiled, message = load(chunk, "derive-unwrap_record", "t")
-		assert(compiled, message)
+		if not compiled then
+			error(message)
+		end
 		idx["unwrap_" .. kind] = compiled()
 		t.derived_unwrap = true
 	end,
@@ -330,7 +338,9 @@ end]]
 			derive_print("###")
 
 			local compiled, message = load(chunk, "derive-unwrap_enum", "t")
-			assert(compiled, message)
+			if not compiled then
+				error(message)
+			end
 			idx["unwrap_" .. vname] = compiled()
 		end
 
@@ -400,7 +410,9 @@ end]]
 			derive_print("###")
 
 			local compiled, message = load(chunk, "derive-as_enum", "t")
-			assert(compiled, message)
+			if not compiled then
+				error(message)
+			end
 			idx["as_" .. vname] = compiled()
 		end
 
@@ -448,8 +460,8 @@ end]]
 	local compiled, message = load(chunk, "derive-prettyprintable_trait", "t")
 	if not compiled then
 		print(chunk)
+		error(message)
 	end
-	assert(compiled, message)
 	return compiled()
 end
 
@@ -997,7 +1009,9 @@ end]]
 			derive_print("###")
 
 			local compiled, message = load(chunk, "derive-trait_method_enum", "t")
-			assert(compiled, message)
+			if not compiled then
+				error(message)
+			end
 			trait:implement_on(t, {
 				[method] = compiled(variant_impls),
 			})

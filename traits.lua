@@ -13,7 +13,9 @@ local trait_type_mt = {
 			self.methods[methodname] = true
 		end,
 		implement_on = function(self, ty, methods)
-			assert(type(ty) == "table")
+			if type(ty) ~= "table" then
+				error("trying to implement on something that isn't a type")
+			end
 			local implemented_methods = {}
 			for k, v in pairs(self.methods) do
 				implemented_methods[k] = methods[k]
