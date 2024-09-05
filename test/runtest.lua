@@ -2,14 +2,14 @@ local endTime = os.time() + 3
 --while os.time() < endTime do end
 
 local startTime = os.clock()
-local metalanguage = require "./metalanguage"
-local evaluator = require "./evaluator"
-local format = require "./format-adapter"
-local base_env = require "./base-env"
+local metalanguage = require "../metalanguage"
+local evaluator = require "../evaluator"
+local format = require "../format-adapter"
+local base_env = require "../base-env"
 local p = require "pretty-print".prettyPrint
-local terms = require "./terms"
-local exprs = require "./alicorn-expressions"
-local profile = require "./profile"
+local terms = require "../terms"
+local exprs = require "../alicorn-expressions"
+local profile = require "../profile"
 local fs = require "fs"
 local path = require "path"
 
@@ -55,7 +55,7 @@ if opts then
 	end
 end
 
-local filename = path.resolve("testfile.alc")
+local filename = path.resolve(path.dirname(argv[1]) .. "/testfile.alc")
 local src = fs.readFileSync(filename)
 
 print("Read code")
@@ -131,7 +131,7 @@ if print_typed then
 	print(term:pretty_print(terms.runtime_context()))
 end
 
-local gen = require "./terms-generators"
+local gen = require "../terms-generators"
 local set = gen.declare_set
 local unique_id = gen.builtin_table
 evaluator.typechecker_state:flow(

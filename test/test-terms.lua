@@ -1,5 +1,5 @@
-local terms = require "./terms"
-local evaluator = require "./evaluator"
+local terms = require "../terms"
+local evaluator = require "../evaluator"
 local inferrable_term = terms.inferrable_term
 local infer = evaluator.infer
 local evaluate = evaluator.evaluate
@@ -54,3 +54,5 @@ test_levels()
 -- FIXME: star isn't implemented as an inferrable term
 -- test_star()
 --test_metavariable_bind_to_other_mv()
+
+print("Success!")
