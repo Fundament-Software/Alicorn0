@@ -31,6 +31,13 @@ let explicit-unwrap = unwrap
 let wrap = implicit-wrap
 let unwrap = implicit-unwrap
 
+let unstrict-wrap = lambda_implicit (T : type_(10, 0))
+	lambda ((x : wrapped(T)))
+		unstrict-wrap(T, x)
+let unstrict-unwrap = lambda_implicit (T : type_(10, 0))
+	lambda ((x : wrapped(T)))
+		unstrict-unwrap(T, x)
+
 let host-bool-wrap            = intrinsic "return terms.value.host_bool_type"      : wrapped(host-type)
 let host-string-wrap          = intrinsic "return terms.value.host_string_type"    : wrapped(host-type)
 let host-syntax-wrap          = intrinsic "return terms.host_syntax_type"          : wrapped(host-type)
@@ -728,27 +735,27 @@ let host-if-wrap = intrinsic
 let host-if = unwrap(host-if-wrap)
 
 let tuple-desc-type-inner = intrinsic "return terms.value.tuple_desc_type" :
-	host-func-type ((U : wrapped(universe))) -> ((T : wrapped(host-type)))
+	host-func-type ((U : unstrict-wrapped(universe))) -> ((T : unstrict-wrapped(host-type)))
 let tuple-desc-type = lambda (U : universe)
-	let (T) = tuple-desc-type-inner(wrap(U))
-	unwrap(T)
+	let (T) = tuple-desc-type-inner(unstrict-wrap(U))
+	unstrict-unwrap(T)
 let tuple-type-explicit = lambda (U : universe, desc : tuple-desc-type(U))
 	let inner = intrinsic "return terms.value.tuple_type" :
-		host-func-type ((desc : wrapped(tuple-desc-type(U)))) -> ((T : wrapped(U)))
-	let (T) = inner(wrap(desc))
-	unwrap(T)
+		host-func-type ((desc : unstrict-wrapped(tuple-desc-type(U)))) -> ((T : unstrict-wrapped(U)))
+	let (T) = inner(unstrict-wrap(desc))
+	unstrict-unwrap(T)
 let tuple-type = lambda_implicit (U : universe)
 	lambda (desc : tuple-desc-type(U))
 		let inner = intrinsic "return terms.value.tuple_type" :
-			host-func-type ((desc : wrapped(tuple-desc-type(U)))) -> ((T : wrapped(U)))
-		let (T) = inner(wrap(desc))
-		unwrap(T)
-let host-tuple-type = lambda_implicit (U : universe)
-	lambda (desc : tuple-desc-type(U))
+			host-func-type ((desc : unstrict-wrapped(tuple-desc-type(U)))) -> ((T : unstrict-wrapped(U)))
+		let (T) = inner(unstrict-wrap(desc))
+		unstrict-unwrap(T)
+let host-tuple-type =
+	lambda (desc : tuple-desc-type(host-type))
 		let inner = intrinsic "return terms.value.host_tuple_type" :
-			host-func-type ((desc : wrapped(tuple-desc-type(U)))) -> ((T : wrapped(host-type)))
-		let (T) = inner(wrap(desc))
-		unwrap(T)
+			host-func-type ((desc : unstrict-wrapped(tuple-desc-type(host-type)))) -> ((T : unstrict-wrapped(host-type)))
+		let (T) = inner(unstrict-wrap(desc))
+		unstrict-unwrap(T)
 let tuple-desc-empty = lambda (U : universe)
 	let T = tuple-desc-type(U)
 	let empty = intrinsic "return terms.empty" : wrapped(T)
@@ -756,31 +763,31 @@ let tuple-desc-empty = lambda (U : universe)
 let tuple-desc-elem-explicit = lambda (
 		U    : universe,
 		desc : tuple-desc-type(U),
-		elem : (forall (rest : tuple-type(desc)) -> (next : U)))
+		elem : (forall (rest : tuple-type-explicit(U, desc)) -> (next : U)))
 	let inner = intrinsic "return terms.cons" :
 		host-func-type (
-			desc_ : wrapped(tuple-desc-type(U)), # aaaa shadowing
-			elem  : (wrapped (forall (rest : tuple-type(desc)) -> (next : U))))
+			desc_ : unstrict-wrapped(tuple-desc-type(U)), # aaaa shadowing
+			elem  : (unstrict-wrapped (forall (rest : tuple-type-explicit(U, desc)) -> (next : U))))
 			->
-			((T : wrapped(tuple-desc-type(U))))
+			((T : unstrict-wrapped(tuple-desc-type(U))))
 	let (T) =
 		inner
-			wrap(desc)
-			wrap(elem)
-	unwrap(T)
+			unstrict-wrap(desc)
+			unstrict-wrap(elem)
+	unstrict-unwrap(T)
 let tuple-desc-elem-implicit = lambda_curry ((U : universe))
-	lambda (desc : tuple-desc-type(U), elem : (forall (rest : tuple-type(desc)) -> (next : U)))
+	lambda (desc : tuple-desc-type(U), elem : (forall (rest : tuple-type-explicit(U, desc)) -> (next : U)))
 		let inner = intrinsic "return terms.cons" :
 			host-func-type (
-				desc_ : wrapped(tuple-desc-type(U)), # aaaa shadowing
-				elem  : (wrapped (forall (rest : tuple-type(desc)) -> (next : U))))
+				desc_ : unstrict-wrapped(tuple-desc-type(U)), # aaaa shadowing
+				elem  : (unstrict-wrapped (forall (rest : tuple-type(desc)) -> (next : U))))
 				->
-				((T : wrapped(tuple-desc-type(U))))
+				((T : unstrict-wrapped(tuple-desc-type(U))))
 		let (T) =
 			inner
-				wrap(desc)
-				wrap(elem)
-		unwrap(T)
+				unstrict-wrap(desc)
+				unstrict-wrap(elem)
+		unstrict-unwrap(T)
 # FIXME: we're comparing metavariables against placeholders AGAIN AAAA
 # let tuple-desc-elem-implicit2 = lambda_curry (U : universe, desc : tuple-desc-type(U))
 # 	lambda (elem : (forall (rest : tuple-type(desc)) -> (next : U)))
@@ -816,7 +823,7 @@ let tuple-desc-singleton = lambda (U : universe, T : U)
 # 	lambda (desc : tuple-desc-type(U))
 # 		intrinsic "return function(...) return ... end" :
 # 			host-func-type (t : host-tuple-type(desc)) -> (t : host-tuple-type(desc))
-let tuple-desc-singleton = lambda (U : universe, T : U)
+####let tuple-desc-singleton = lambda (U : universe, T : U)
 	tuple-desc-elem-explicit U
 		tuple-desc-empty U
 		lambda ()
@@ -987,9 +994,10 @@ let exit-block = intrinsic
 let host-matcher = new-host-type-family new-host-unique-id("matcher")
 	forall (userdata : host-type, result : tuple-desc-type(host-type)) -> (T : host-type)
 	tuple-of-implicit contravariant(subtyping) covariant(tuple-desc-relation)
+let host-anchor = new-host-type(new-host-unique-id("anchor"))
 
 let nil-handler-type = lambda (userdata : host-type, result : tuple-desc-type(host-type))
-	host-func-type ((ud : userdata)) -> (r : host-tuple-type(result))
+	host-func-type (ud : userdata, anchor : host-anchor) -> (r : host-tuple-type(result))
 let host-matcher-is-nil = lambda (userdata : host-type, result : tuple-desc-type(host-type), accept-handler : nil-handler-type(userdata, result))
 	let inner = intrinsic "return metalanguage.isnil" :
 		host-func-type ((accept-handler : nil-handler-type(userdata, result))) -> ((m : host-matcher(userdata, result)))
@@ -997,7 +1005,7 @@ let host-matcher-is-nil = lambda (userdata : host-type, result : tuple-desc-type
 	m
 
 let pair-handler-type = lambda (userdata : host-type, result : tuple-desc-type(host-type))
-	host-func-type (ud : userdata, a : host-syntax, b : host-syntax) -> (r : host-tuple-type(result))
+	host-func-type (ud : userdata, a : host-syntax, b : host-syntax, anchor : host-anchor) -> (r : host-tuple-type(result))
 let host-matcher-is-pair = lambda (userdata : host-type, result : tuple-desc-type(host-type), accept-handler : pair-handler-type(userdata, result))
 	let inner = intrinsic "return metalanguage.ispair" :
 		host-func-type ((accept-handler : pair-handler-type(userdata, result))) -> ((m : host-matcher(userdata, result)))
@@ -1005,7 +1013,7 @@ let host-matcher-is-pair = lambda (userdata : host-type, result : tuple-desc-typ
 	m
 
 let symbol-handler-type = lambda (userdata : host-type, result : tuple-desc-type(host-type))
-	host-func-type (ud : userdata, symbol : host-string) -> (r : host-tuple-type(result))
+	host-func-type (ud : userdata, symbol : host-string, anchor : host-anchor) -> (r : host-tuple-type(result))
 let host-matcher-is-symbol = lambda (userdata : host-type, result : tuple-desc-type(host-type), accept-handler : symbol-handler-type(userdata, result))
 	let inner = intrinsic "return metalanguage.issymbol" :
 		host-func-type ((accept-handler : symbol-handler-type(userdata, result))) -> ((m : host-matcher(userdata, result)))
@@ -1013,7 +1021,7 @@ let host-matcher-is-symbol = lambda (userdata : host-type, result : tuple-desc-t
 	m
 
 let value-handler-type = lambda (userdata : host-type, result : tuple-desc-type(host-type))
-	host-func-type (ud : userdata, val : host-literal) -> (r : host-tuple-type(result))
+	host-func-type (ud : userdata, val : host-literal, anchor : host-anchor) -> (r : host-tuple-type(result))
 let host-matcher-is-value = lambda (userdata : host-type, result : tuple-desc-type(host-type), accept-handler : value-handler-type(userdata, result))
 	let inner = intrinsic "return metalanguage.isvalue" :
 		host-func-type ((accept-handler : value-handler-type(userdata, result))) -> ((m : host-matcher(userdata, result)))
@@ -1073,11 +1081,8 @@ let host-matcher-reducible = lambda (
 	m
 # FIXME: implicit here doesn't work
 # FIXME: out of date
-####let host-matcher-reducible-implicit = lambda_implicit (userdata       : host-type)
+####let host-matcher-reducible-implicit = lambda_curry (userdata : host-type, storage : tuple-desc-type(host-type), result2 : tuple-desc-type(host-type), result : tuple-desc-type(host-type))
 	lambda (
-			storage        : tuple-desc-type(host-type),
-			result2        : tuple-desc-type(host-type),
-			result         : tuple-desc-type(host-type),
 			red            : reducer-type(userdata, storage, result2, result),
 			s              : host-tuple-type(storage),
 			accept-handler : reducible-handler-type(userdata, result2, result))
@@ -1184,7 +1189,7 @@ let operative-result-desc = lambda (goal : host-goal)
 		tuple-desc-singleton(host-type, host-term-of(goal))
 		tuple-desc-singleton(host-type, host-environment)
 
-let new-operative = lambda (userdata : host-type, ud : userdata, handler : operative-handler-type(userdata))
+####let new-operative = lambda (userdata : host-type, ud : userdata, handler : operative-handler-type(userdata))
 	let inner = intrinsic
 		""""
 			local function new_operative(userdata, ud, handler)
@@ -1221,7 +1226,7 @@ let new-operative = lambda (userdata : host-type, ud : userdata, handler : opera
 				op-type
 	tuple-of(type_(1, 0), result-desc)(op-type, op)
 
-let new-operative-implicit = lambda_implicit (userdata : host-type)
+####let new-operative-implicit = lambda_implicit (userdata : host-type)
 	lambda (ud : userdata, handler : operative-handler-type(userdata))
 		let inner = intrinsic
 			""""
@@ -1785,8 +1790,7 @@ let listtail-reducer =
 #		let inner =
 #			intrinsic
 #				""""
-#					local http = require "http"
-#					return http.createServer
+#					return require "http".createServer
 #				:
 #				host-prog-type ((handler : HTTPHandler)) -> ((res : HTTPServer))
 #		let (host-cb) = func-to-host-func(wrap(HTTPHandler), host-nil, wrap(callback))

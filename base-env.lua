@@ -6,6 +6,7 @@ local exprs = require "alicorn-expressions"
 local terms = require "terms"
 local gen = require "terms-generators"
 local evaluator = require "evaluator"
+local format = require "format"
 
 local value = terms.value
 local typed = terms.typed_term
@@ -16,17 +17,21 @@ local result_info_effectful = value.result_info(terms.result_info(terms.purity.e
 
 local usage_array = gen.declare_array(gen.builtin_number)
 
+---@param anchor Anchor
 ---@param val value
 ---@param typ value
----@return inferrable
-local function lit_term(val, typ)
-	return terms.inferrable_term.typed(typ, usage_array(), terms.typed_term.literal(val))
+---@return anchored_inferrable
+local function lit_term(anchor, val, typ)
+	return terms.anchored_inferrable_term(
+		anchor,
+		terms.unanchored_inferrable_term.typed(typ, usage_array(), terms.typed_term.literal(val))
+	)
 end
 
 --- lua_operative is dependently typed and should produce inferrable vs checkable depending on the goal, and an error as the second return if it failed
 --- | unknown in the second return insufficiently constrains the non-error cases to be inferrable or checkable terms
 --- this can be fixed in the future if we swap to returning a Result type that can express the success/error constraint separately
----@alias lua_operative fun(syntax : ConstructedSyntax, env : Environment, goal : expression_goal) : boolean, inferrable | checkable | string, Environment?
+---@alias lua_operative fun(syntax : ConstructedSyntax, env : Environment, goal : expression_goal) : boolean, anchored_inferrable | checkable | string, Environment?
 
 ---handle a let binding
 ---@type lua_operative
@@ -74,25 +79,28 @@ local function let_bind(syntax, env)
 		--print("binding destructuring with let")
 		--p(name)
 		local tupletype = gen.declare_array(gen.builtin_string)
-		env = env:bind_local(terms.binding.tuple_elim(tupletype(table.unpack(name)), expr))
+		env = env:bind_local(syntax.anchor, terms.binding.tuple_elim(tupletype(table.unpack(name)), expr))
 	else
-		env = env:bind_local(terms.binding.let(name, expr))
+		env = env:bind_local(syntax.anchor, terms.binding.let(name, expr))
 	end
 
 	return true,
-		terms.inferrable_term.typed(
-			terms.unit_type,
-			gen.declare_array(gen.builtin_number)(),
-			terms.typed_term.literal(terms.unit_val)
+		terms.anchored_inferrable_term(
+			syntax.anchor,
+			terms.unanchored_inferrable_term.typed(
+				terms.unit_type,
+				gen.declare_array(gen.builtin_number)(),
+				terms.typed_term.literal(terms.unit_val)
+			)
 		),
 		env
 end
 
 ---@param _ any
 ---@param name string
----@param exprenv { val:inferrable, env:Environment }
+---@param exprenv { val:anchored_inferrable, env:Environment }
 ---@return boolean
----@return { name:string, expr:inferrable }
+---@return { name:string, expr:anchored_inferrable }
 ---@return Environment
 local function record_threaded_element_acceptor(_, name, exprenv)
 	local expr, env = utils.unpack_val_env(exprenv)
@@ -118,11 +126,11 @@ local function record_build(syntax, env)
 	if not ok then
 		return ok, defs
 	end
-	local map = gen.declare_map(gen.builtin_string, terms.inferrable_term)()
+	local map = gen.declare_map(gen.builtin_string, terms.anchored_inferrable_term)()
 	for _, v in ipairs(defs) do
 		map[v.name] = v.expr
 	end
-	return true, terms.inferrable_term.record_cons(map), env
+	return true, terms.anchored_inferrable_term(syntax.anchor, terms.unanchored_inferrable_term.record_cons(map), env)
 end
 
 ---@type lua_operative
@@ -155,7 +163,14 @@ local function intrinsic(syntax, env)
 		error "env nil in base-env.intrinsic"
 	end
 	return true,
-		terms.inferrable_term.host_intrinsic(str, type--[[terms.checkable_term.inferrable(type)]], syntax.anchor),
+		terms.anchored_inferrable_term(
+			syntax.anchor,
+			terms.unanchored_inferrable_term.host_intrinsic(
+				str,
+				type --[[terms.checkable_term.inferrable(type)]],
+				syntax.anchor
+			)
+		),
 		env
 end
 
@@ -164,10 +179,13 @@ end
 ---@return checkable
 local function make_literal_purity(purity)
 	return terms.checkable_term.inferrable(
-		terms.inferrable_term.typed(
-			terms.host_purity_type,
-			usage_array(),
-			terms.typed_term.literal(terms.value.host_value(purity))
+		terms.anchored_inferrable_term(
+			format.create_anchor(0, 0, "base-env.lua:make_literal_purity"),
+			terms.unanchored_inferrable_term.typed(
+				terms.host_purity_type,
+				usage_array(),
+				terms.typed_term.literal(terms.value.host_value(purity))
+			)
 		)
 	)
 end
@@ -179,7 +197,7 @@ local pure_ascribed_name = metalanguage.reducer(
 	---@param env Environment
 	---@return boolean
 	---@return string
-	---@return inferrable?
+	---@return anchored_inferrable?
 	---@return Environment?
 	function(syntax, env)
 		local ok, name, tail = syntax:match({
@@ -221,11 +239,11 @@ local pure_ascribed_name = metalanguage.reducer(
 local ascribed_name = metalanguage.reducer(
 	---@param syntax ConstructedSyntax
 	---@param env Environment
-	---@param prev inferrable
+	---@param prev anchored_inferrable
 	---@param names string[]
 	---@return boolean
 	---@return string
-	---@return inferrable?
+	---@return anchored_inferrable?
 	---@return Environment?
 	function(syntax, env, prev, names)
 		-- print("ascribed_name trying")
@@ -237,6 +255,7 @@ local ascribed_name = metalanguage.reducer(
 		local shadowed
 		shadowed, env = env:enter_block(terms.block_purity.pure)
 		env = env:bind_local(
+			syntax.anchor,
 			terms.binding.annotated_lambda("#prev", prev, syntax.anchor, terms.visibility.explicit, literal_purity_pure)
 		)
 		local ok, prev_binding = env:get("#prev")
@@ -244,7 +263,7 @@ local ascribed_name = metalanguage.reducer(
 			error "#prev should always be bound, was just added"
 		end
 		---@cast prev_binding -string
-		env = env:bind_local(terms.binding.tuple_elim(names, prev_binding))
+		env = env:bind_local(syntax.anchor, terms.binding.tuple_elim(names, prev_binding))
 		local ok, name, val, env =
 			syntax:match({ pure_ascribed_name(metalanguage.accept_handler, env) }, metalanguage.failure_handler, nil)
 		if not ok then
@@ -275,6 +294,7 @@ local curry_segment = metalanguage.reducer(
 				--print("type_env: " .. tostring(thread.env))
 				return pure_ascribed_name(function(_, name, type_val, type_env)
 					type_env = type_env:bind_local(
+						syntax.anchor,
 						terms.binding.annotated_lambda(
 							name,
 							type_val,
@@ -331,26 +351,32 @@ local tupleof_ascribed_names_inner = metalanguage.reducer(
 	---@param syntax ConstructedSyntax
 	---@param env Environment
 	---@return boolean
-	---@return {names: string[], args: inferrable, env: Environment}|string
+	---@return {names: string[], args: anchored_inferrable, env: Environment}|string
 	function(syntax, env)
-		local function build_type_term(args)
-			return terms.inferrable_term.tuple_type(args)
+		local function build_type_term(anchor, args)
+			return terms.anchored_inferrable_term(anchor, terms.unanchored_inferrable_term.tuple_type(args))
 		end
-		local inf_array = gen.declare_array(terms.inferrable_term)
-		local function tup_cons(...)
-			return terms.inferrable_term.tuple_cons(inf_array(...))
+		local inf_array = gen.declare_array(terms.anchored_inferrable_term)
+		local function tup_cons(anchor, ...)
+			return terms.anchored_inferrable_term(anchor, terms.unanchored_inferrable_term.tuple_cons(inf_array(...)))
 		end
-		local function cons(...)
-			return terms.inferrable_term.enum_cons(
-				terms.value.tuple_desc_type(terms.value.star(0, 0)),
-				terms.DescCons.cons,
-				tup_cons(...)
+		local function cons(anchor, ...)
+			return terms.anchored_inferrable_term(
+				anchor,
+				terms.unanchored_inferrable_term.enum_cons(
+					terms.value.tuple_desc_type(terms.value.star(0, 0)),
+					terms.DescCons.cons,
+					tup_cons(anchor, ...)
+				)
 			)
 		end
-		local empty = terms.inferrable_term.enum_cons(
-			terms.value.tuple_desc_type(terms.value.star(0, 0)),
-			terms.DescCons.empty,
-			tup_cons()
+		local empty = terms.anchored_inferrable_term(
+			syntax.anchor,
+			terms.unanchored_inferrable_term.enum_cons(
+				terms.value.tuple_desc_type(terms.value.star(0, 0)),
+				terms.DescCons.empty,
+				tup_cons(syntax.anchor)
+			)
 		)
 		local names = gen.declare_array(gen.builtin_string)()
 
@@ -363,11 +389,11 @@ local tupleof_ascribed_names_inner = metalanguage.reducer(
 					names:append(name)
 					local newthread = {
 						names = names,
-						args = cons(thread.args, type_val),
+						args = cons(syntax.anchor, thread.args, type_val),
 						env = type_env,
 					}
 					return true, { name = name, type = type_val }, newthread
-				end, thread.env, build_type_term(thread.args), thread.names)
+				end, thread.env, build_type_term(syntax.anchor, thread.args), thread.names)
 			end, {
 				names = names,
 				args = empty,
@@ -384,7 +410,7 @@ local tupleof_ascribed_names = metalanguage.reducer(
 	---@param syntax ConstructedSyntax
 	---@param env Environment
 	---@return boolean
-	---@return {names: string[], args: inferrable, env: Environment}|string
+	---@return {names: string[], args: anchored_inferrable, env: Environment}|string
 	function(syntax, env)
 		local ok, thread = syntax:match({
 			tupleof_ascribed_names_inner(metalanguage.accept_handler, env),
@@ -392,7 +418,8 @@ local tupleof_ascribed_names = metalanguage.reducer(
 		if not ok then
 			return ok, thread
 		end
-		thread.args = terms.inferrable_term.tuple_type(thread.args)
+		thread.args =
+			terms.anchored_inferrable_term(syntax.anchor, terms.unanchored_inferrable_term.tuple_type(thread.args))
 		return ok, thread
 	end,
 	"tupleof_ascribed_names"
@@ -402,7 +429,7 @@ local host_tupleof_ascribed_names = metalanguage.reducer(
 	---@param syntax ConstructedSyntax
 	---@param env Environment
 	---@return boolean
-	---@return {names: string[], args: inferrable, env: Environment}|string
+	---@return {names: string[], args: anchored_inferrable, env: Environment}|string
 	function(syntax, env)
 		local ok, thread = syntax:match({
 			tupleof_ascribed_names_inner(metalanguage.accept_handler, env),
@@ -410,7 +437,8 @@ local host_tupleof_ascribed_names = metalanguage.reducer(
 		if not ok then
 			return ok, thread
 		end
-		thread.args = terms.inferrable_term.host_tuple_type(thread.args)
+		thread.args =
+			terms.anchored_inferrable_term(syntax.anchor, terms.unanchored_inferrable_term.host_tuple_type(thread.args))
 		return ok, thread
 	end,
 	"host_tupleof_ascribed_names"
@@ -420,7 +448,7 @@ local ascribed_segment = metalanguage.reducer(
 	---@param syntax ConstructedSyntax
 	---@param env Environment
 	---@return boolean
-	---@return {single: boolean, names: string|string[], args: inferrable, env: Environment}|string
+	---@return {single: boolean, names: string|string[], args: anchored_inferrable, env: Environment}|string
 	function(syntax, env)
 		-- check whether syntax looks like a single annotated param
 		local single, _, _, _ = syntax:match({
@@ -461,7 +489,7 @@ local host_ascribed_segment = metalanguage.reducer(
 	---@param syntax ConstructedSyntax
 	---@param env Environment
 	---@return boolean
-	---@return {single: boolean, names: string|string[], args: inferrable, env: Environment}|string
+	---@return {single: boolean, names: string|string[], args: anchored_inferrable, env: Environment}|string
 	function(syntax, env)
 		-- check whether syntax looks like a single annotated param
 		local single, _, _, _ = syntax:match({
@@ -504,29 +532,35 @@ local tuplewrap_ascribed_name_inner = metalanguage.reducer(
 	---@return boolean
 	---@return {names: string[], args: inferrable, env: Environment}|string
 	function(syntax, env)
-		local function build_type_term(args)
-			return terms.inferrable_term.tuple_type(args)
+		local function build_type_term(anchor, args)
+			return terms.anchored_inferrable_term(anchor, terms.unanchored_inferrable_term.tuple_type(args))
 		end
-		local inf_array = gen.declare_array(terms.inferrable_term)
-		local function tup_cons(...)
-			return terms.inferrable_term.tuple_cons(inf_array(...))
+		local inf_array = gen.declare_array(terms.anchored_inferrable_term)
+		local function tup_cons(anchor, ...)
+			return terms.anchored_inferrable_term(anchor, terms.unanchored_inferrable_term.tuple_cons(inf_array(...)))
 		end
-		local function cons(...)
-			return terms.inferrable_term.enum_cons(
-				terms.value.tuple_desc_type(terms.value.star(0, 0)),
-				terms.DescCons.cons,
-				tup_cons(...)
+		local function cons(anchor, ...)
+			return terms.anchored_inferrable_term(
+				anchor,
+				terms.unanchored_inferrable_term.enum_cons(
+					terms.value.tuple_desc_type(terms.value.star(0, 0)),
+					terms.DescCons.cons,
+					tup_cons(anchor, ...)
+				)
 			)
 		end
-		local empty = terms.inferrable_term.enum_cons(
-			terms.value.tuple_desc_type(terms.value.star(0, 0)),
-			terms.DescCons.empty,
-			tup_cons()
+		local empty = terms.anchored_inferrable_term(
+			syntax.anchor,
+			terms.unanchored_inferrable_term.enum_cons(
+				terms.value.tuple_desc_type(terms.value.star(0, 0)),
+				terms.DescCons.empty,
+				tup_cons(syntax.anchor)
+			)
 		)
 		local names = gen.declare_array(gen.builtin_string)()
 		local args = empty
 		local ok, name, type_val, type_env = syntax:match({
-			ascribed_name(metalanguage.accept_handler, env, build_type_term(args), names),
+			ascribed_name(metalanguage.accept_handler, env, build_type_term(syntax.anchor, args), names),
 		}, metalanguage.failure_handler, nil)
 		if not ok then
 			return ok, name
@@ -534,7 +568,7 @@ local tuplewrap_ascribed_name_inner = metalanguage.reducer(
 
 		names = names:copy()
 		names:append(name)
-		args = cons(args, type_val)
+		args = cons(syntax.anchor, args, type_val)
 		env = type_env
 		return ok, { names = names, args = args, env = env }
 	end,
@@ -553,7 +587,8 @@ local tuplewrap_ascribed_name = metalanguage.reducer(
 		if not ok then
 			return ok, thread
 		end
-		thread.args = terms.inferrable_term.tuple_type(thread.args)
+		thread.args =
+			terms.anchored_inferrable_term(syntax.anchor, terms.unanchored_inferrable_term.tuple_type(thread.args))
 		return ok, thread
 	end,
 	"tuplewrap_ascribed_name"
@@ -571,7 +606,8 @@ local host_tuplewrap_ascribed_name = metalanguage.reducer(
 		if not ok then
 			return ok, thread
 		end
-		thread.args = terms.inferrable_term.host_tuple_type(thread.args)
+		thread.args =
+			terms.anchored_inferrable_term(syntax.anchor, terms.unanchored_inferrable_term.host_tuple_type(thread.args))
 		return ok, thread
 	end,
 	"host_tuplewrap_ascribed_name"
@@ -673,6 +709,7 @@ local function make_host_func_syntax(effectful)
 		-- tail.anchor can be nil so we fall back to the anchor for the start of this host func type if needed
 		-- TODO: use correct name in lambda parameter instead of adding an extra let
 		env = env:bind_local(
+			tail.anchor or syntax.anchor,
 			terms.binding.annotated_lambda(
 				"#host-func-arguments",
 				params_args,
@@ -687,9 +724,9 @@ local function make_host_func_syntax(effectful)
 		end
 		---@cast arg -string
 		if params_single then
-			env = env:bind_local(terms.binding.let(params_names, arg))
+			env = env:bind_local(syntax.anchor, terms.binding.let(params_names, arg))
 		else
-			env = env:bind_local(terms.binding.tuple_elim(params_names, arg))
+			env = env:bind_local(syntax.anchor, terms.binding.tuple_elim(params_names, arg))
 		end
 
 		local ok, results_thread = tail:match({
@@ -708,23 +745,35 @@ local function make_host_func_syntax(effectful)
 		if effectful then
 			local effect_description =
 				terms.value.effect_row(gen.declare_set(terms.unique_id)(terms.lua_prog), terms.value.effect_empty)
-			local effect_term = terms.inferrable_term.typed(
-				terms.value.effect_row_type,
-				usage_array(),
-				terms.typed_term.literal(effect_description)
+			local effect_term = terms.anchored_inferrable_term(
+				syntax.anchor,
+				terms.unanchored_inferrable_term.typed(
+					terms.value.effect_row_type,
+					usage_array(),
+					terms.typed_term.literal(effect_description)
+				)
 			)
-			results_args = terms.inferrable_term.program_type(effect_term, results_args)
+			results_args = terms.anchored_inferrable_term(
+				syntax.anchor,
+				terms.unanchored_inferrable_term.program_type(effect_term, results_args)
+			)
 		end
 
 		local env, fn_res_term, purity = env:exit_block(results_args, shadowed)
-		local fn_type_term = terms.inferrable_term.host_function_type(
-			params_args,
-			fn_res_term,
-			terms.checkable_term.inferrable(
-				terms.inferrable_term.typed(
-					terms.value.result_info_type,
-					usage_array(),
-					terms.typed_term.literal(effectful and result_info_effectful or result_info_pure)
+		local fn_type_term = terms.anchored_inferrable_term(
+			syntax.anchor,
+			terms.unanchored_inferrable_term.host_function_type(
+				params_args,
+				fn_res_term,
+				terms.checkable_term.inferrable(
+					terms.anchored_inferrable_term(
+						syntax.anchor,
+						terms.unanchored_inferrable_term.typed(
+							terms.value.result_info_type,
+							usage_array(),
+							terms.typed_term.literal(effectful and result_info_effectful or result_info_pure)
+						)
+					)
 				)
 			)
 		)
@@ -768,6 +817,7 @@ local function forall_type_impl(syntax, env)
 	-- tail.anchor can be nil so we fall back to the anchor for the start of this forall type if needed
 	-- TODO: use correct name in lambda parameter instead of adding an extra let
 	env = env:bind_local(
+		syntax.anchor,
 		terms.binding.annotated_lambda(
 			"#forall-arguments",
 			params_args,
@@ -782,9 +832,9 @@ local function forall_type_impl(syntax, env)
 	end
 	---@cast arg -string
 	if params_single then
-		env = env:bind_local(terms.binding.let(params_names, arg))
+		env = env:bind_local(syntax.anchor, terms.binding.let(params_names, arg))
 	else
-		env = env:bind_local(terms.binding.tuple_elim(params_names, arg))
+		env = env:bind_local(syntax.anchor, terms.binding.tuple_elim(params_names, arg))
 	end
 
 	local ok, results_thread = tail:match({
@@ -799,21 +849,30 @@ local function forall_type_impl(syntax, env)
 
 	local env, fn_res_term, purity = env:exit_block(results_args, shadowed)
 	local usage_array = gen.declare_array(gen.builtin_number)
-	local fn_type_term = terms.inferrable_term.pi(
-		params_args,
-		terms.checkable_term.inferrable(
-			terms.inferrable_term.typed(
-				terms.value.param_info_type,
-				usage_array(),
-				terms.typed_term.literal(param_info_explicit)
-			)
-		),
-		fn_res_term,
-		terms.checkable_term.inferrable(
-			terms.inferrable_term.typed(
-				terms.value.result_info_type,
-				usage_array(),
-				terms.typed_term.literal(result_info_pure)
+	local fn_type_term = terms.anchored_inferrable_term(
+		syntax.anchor,
+		terms.unanchored_inferrable_term.pi(
+			params_args,
+			terms.checkable_term.inferrable(
+				terms.anchored_inferrable_term(
+					syntax.anchor,
+					terms.unanchored_inferrable_term.typed(
+						terms.value.param_info_type,
+						usage_array(),
+						terms.typed_term.literal(param_info_explicit)
+					)
+				)
+			),
+			fn_res_term,
+			terms.checkable_term.inferrable(
+				terms.anchored_inferrable_term(
+					syntax.anchor,
+					terms.unanchored_inferrable_term.typed(
+						terms.value.result_info_type,
+						usage_array(),
+						terms.typed_term.literal(result_info_pure)
+					)
+				)
 			)
 		)
 	)
@@ -864,7 +923,12 @@ local function the_operative_impl(syntax, env)
 		print("val", val)
 		error "the operative didn't get a checkable term"
 	end
-	return ok, terms.inferrable_term.annotated(val, type_inferrable_term), env
+	return ok,
+		terms.anchored_inferrable_term(
+			syntax.anchor,
+			terms.unanchored_inferrable_term.annotated(val, type_inferrable_term)
+		),
+		env
 end
 
 ---apply(fn, args) calls fn with an existing args tuple
@@ -923,9 +987,15 @@ local function apply_operative_impl(syntax, env)
 		end
 
 		local inf_term, env = utils.unpack_val_env(args_inferrable_term)
-		return terms.inferrable_term.application(
-			terms.inferrable_term.typed(spec_type, usages, fn_typed_term),
-			inf_term
+		return terms.anchored_inferrable_term(
+			syntax.anchor,
+			terms.unanchored_inferrable_term.application(
+				terms.anchored_inferrable_term(
+					syntax.anchor,
+					terms.unanchored_inferrable_term.typed(spec_type, usages, fn_typed_term)
+				),
+				inf_term
+			)
 		),
 			env
 	end
@@ -943,7 +1013,7 @@ local function apply_operative_impl(syntax, env)
 	if ok then
 		return true, res2, res2env
 	end
-	--error(res1)
+	error(res1)
 	--error(res2)
 	error("apply() speculation failed! debugging this is left as an exercise to the maintainer")
 end
@@ -961,6 +1031,7 @@ local function lambda_impl(syntax, env)
 
 	local shadow, inner_env = env:enter_block(terms.block_purity.pure)
 	inner_env = inner_env:bind_local(
+		syntax.anchor,
 		terms.binding.annotated_lambda(
 			"#lambda-arguments",
 			args,
@@ -970,7 +1041,7 @@ local function lambda_impl(syntax, env)
 		)
 	)
 	local _, arg = inner_env:get("#lambda-arguments")
-	inner_env = inner_env:bind_local(terms.binding.tuple_elim(names, arg))
+	inner_env = inner_env:bind_local(syntax.anchor, terms.binding.tuple_elim(names, arg))
 	local ok, expr, env = tail:match(
 		{ exprs.block(metalanguage.accept_handler, exprs.ExpressionArgs.new(terms.expression_goal.infer, inner_env)) },
 		metalanguage.failure_handler,
@@ -996,6 +1067,7 @@ local function lambda_prog_impl(syntax, env)
 
 	local shadow, inner_env = env:enter_block(terms.block_purity.effectful)
 	inner_env = inner_env:bind_local(
+		syntax.anchor,
 		terms.binding.annotated_lambda(
 			"#lambda-arguments",
 			args,
@@ -1005,7 +1077,7 @@ local function lambda_prog_impl(syntax, env)
 		)
 	)
 	local _, arg = inner_env:get("#lambda-arguments")
-	inner_env = inner_env:bind_local(terms.binding.tuple_elim(names, arg))
+	inner_env = inner_env:bind_local(syntax.anchor, terms.binding.tuple_elim(names, arg))
 	local ok, expr, env = tail:match(
 		{ exprs.block(metalanguage.accept_handler, exprs.ExpressionArgs.new(terms.expression_goal.infer, inner_env)) },
 		metalanguage.failure_handler,
@@ -1031,6 +1103,7 @@ local function lambda_single_impl(syntax, env)
 
 	local shadow, inner_env = env:enter_block(terms.block_purity.pure)
 	inner_env = inner_env:bind_local(
+		syntax.anchor,
 		terms.binding.annotated_lambda(name, arg, syntax.anchor, terms.visibility.explicit, literal_purity_pure)
 	)
 	local ok, expr, env = tail:match(
@@ -1058,6 +1131,7 @@ local function lambda_implicit_impl(syntax, env)
 
 	local shadow, inner_env = env:enter_block(terms.block_purity.pure)
 	inner_env = inner_env:bind_local(
+		syntax.anchor,
 		terms.binding.annotated_lambda(name, arg, syntax.anchor, terms.visibility.implicit, literal_purity_pure)
 	)
 	local ok, expr, env = tail:match(
@@ -1096,10 +1170,13 @@ local function startype_impl(syntax, env)
 	if depth_val.val % 1 ~= 0 then
 		return false, "literal must be an integer for type levels"
 	end
-	local term = terms.inferrable_term.typed(
-		value.star(level_val.val + 1, depth_val.val + 1),
-		usage_array(),
-		terms.typed_term.star(level_val.val, depth_val.val)
+	local term = terms.anchored_inferrable_term(
+		syntax.anchor,
+		terms.unanchored_inferrable_term.typed(
+			value.star(level_val.val + 1, depth_val.val + 1),
+			usage_array(),
+			terms.typed_term.star(level_val.val, depth_val.val)
+		)
 	)
 
 	return true, term, env
@@ -1267,13 +1344,18 @@ local function into_operative_impl(syntax, env)
 	local op_type = value.operative_type(handler, ud_type)
 	local op_val = value.operative_value(ud)
 
-	return true, terms.inferrable_term.typed(op_type, usage_array(), typed.literal(op_val)), env
+	return true,
+		terms.anchored_inferrable_term(
+			syntax.anchor,
+			terms.unanchored_inferrable_term.typed(op_type, usage_array(), typed.literal(op_val))
+		),
+		env
 end
 
 -- eg typed.host_wrap, typed.host_wrapped_type
 ---@param body_fn fun(typed): typed
 ---@param type_fn fun(typed): typed
----@return inferrable
+---@return anchored_inferrable
 local function build_wrap(body_fn, type_fn)
 	local names = gen.declare_array(gen.builtin_string)
 	local names0 = names()
@@ -1282,6 +1364,7 @@ local function build_wrap(body_fn, type_fn)
 	local pname_arg = "#wrap-arguments"
 	local pname_type = "#wrap-prev"
 	return lit_term(
+		format.create_anchor(0, 0, "base-env.lua:build_wrap"),
 		value.closure(
 			pname_arg,
 			typed.tuple_elim(names2, typed.bound_variable(1), 2, body_fn(typed.bound_variable(3))),
@@ -1321,7 +1404,7 @@ end
 -- eg typed.host_unwrap, typed.host_wrapped_type
 ---@param body_fn fun(typed): typed
 ---@param type_fn fun(typed): typed
----@return inferrable
+---@return anchored_inferrable
 local function build_unwrap(body_fn, type_fn)
 	local names = gen.declare_array(gen.builtin_string)
 	local names0 = names()
@@ -1330,6 +1413,7 @@ local function build_unwrap(body_fn, type_fn)
 	local pname_arg = "#unwrap-arguments"
 	local pname_type = "#unwrap-prev"
 	return lit_term(
+		format.create_anchor(0, 0, "base-env.lua:build_unwrap"),
 		value.closure(
 			pname_arg,
 			typed.tuple_elim(names2, typed.bound_variable(1), 2, body_fn(typed.bound_variable(3))),
@@ -1368,7 +1452,7 @@ end
 
 -- eg typed.host_wrapped_type,
 ---@param body_fn fun(typed): typed
----@return inferrable
+---@return anchored_inferrable
 local function build_wrapped(body_fn)
 	local names = gen.declare_array(gen.builtin_string)
 	local names0 = names()
@@ -1376,6 +1460,7 @@ local function build_wrapped(body_fn)
 	local pname_arg = "#wrapped-arguments"
 	local pname_type = "#wrapped-prev"
 	return lit_term(
+		format.create_anchor(0, 0, "base-env.lua:build_wrap"),
 		value.closure(
 			pname_arg,
 			typed.tuple_elim(names1, typed.bound_variable(1), 1, body_fn(typed.bound_variable(2))),
@@ -1433,11 +1518,23 @@ local core_operations = {
 	let = exprs.host_operative(let_bind, "let_bind"),
 	record = exprs.host_operative(record_build, "record_build"),
 	intrinsic = exprs.host_operative(intrinsic, "intrinsic"),
-	["host-number"] = lit_term(value.host_number_type, value.host_type_type),
-	["host-type"] = lit_term(value.host_type_type, value.star(1, 1)),
+	["host-number"] = lit_term(
+		format.create_anchor(0, 0, "base-env.lua:core_operations:host-number"),
+		value.host_number_type,
+		value.host_type_type
+	),
+	["host-type"] = lit_term(
+		format.create_anchor(0, 0, "base-env.lua:core_operations:host-type"),
+		value.host_type_type,
+		value.star(1, 1)
+	),
 	["host-func-type"] = exprs.host_operative(make_host_func_syntax(false), "host_func_type_impl"),
 	["host-prog-type"] = exprs.host_operative(make_host_func_syntax(true), "host_prog_type_impl"),
-	type = lit_term(value.star(0, 0), value.star(1, 1)),
+	type = lit_term(
+		format.create_anchor(0, 0, "base-env.lua:core_operations:type"),
+		value.star(0, 0),
+		value.star(1, 1)
+	),
 	type_ = exprs.host_operative(startype_impl, "startype_impl"),
 	["forall"] = exprs.host_operative(forall_type_impl, "forall_type_impl"),
 	lambda = exprs.host_operative(lambda_impl, "lambda_impl"),
@@ -1459,10 +1556,10 @@ local core_operations = {
 	--["tuple-of"] = evaluator.host_operative(tuple_of_impl),
 	--number = { type = types.type, val = types.number }
 	["into-operative"] = exprs.host_operative(into_operative_impl, "into_operative_impl"),
-	["hackhack-host-term-of-inner"] = terms.inferrable_term.typed(
-		host_term_of_inner_type,
-		usage_array(),
-		typed.literal(value.host_value(host_term_of_inner))
+	["hackhack-host-term-of-inner"] = lit_term(
+		format.create_anchor(0, 0, "base-env.lua:core_operations:hackhack-host-term-of-inner"),
+		value.host_value(host_term_of_inner),
+		host_term_of_inner_type
 	),
 }
 
