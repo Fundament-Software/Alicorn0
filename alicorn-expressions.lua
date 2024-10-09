@@ -1,13 +1,15 @@
 -- get new version of let and do working with terms
 
 local metalanguage = require "metalanguage"
+local format = require "format"
 
 local terms = require "terms"
 local expression_goal = terms.expression_goal
 local runtime_context = terms.runtime_context
 --local typechecking_context = terms.typechecking_context
 local checkable_term = terms.checkable_term
-local inferrable_term = terms.inferrable_term
+local anchored_inferrable_term = terms.anchored_inferrable_term
+local unanchored_inferrable_term = terms.unanchored_inferrable_term
 local typed_term = terms.typed_term
 local visibility = terms.visibility
 local purity = terms.purity
@@ -20,7 +22,7 @@ local value = terms.value
 local gen = require "terms-generators"
 local array = gen.declare_array
 --local checkable_array = array(checkable_term)
-local inferrable_array = array(inferrable_term)
+local anchored_inferrable_array = array(anchored_inferrable_term)
 local typed_array = array(typed_term)
 local value_array = array(value)
 local usage_array = array(gen.builtin_number)
@@ -458,9 +460,9 @@ end
 ---@param a ConstructedSyntax
 ---@param b ConstructedSyntax
 ---@return boolean
----@return inferrable | checkable | string
+---@return anchored_inferrable | checkable | string
 ---@return Environment?
-local function expression_pairhandler(args, a, b)
+local function expression_pairhandler(args, a, b, anchor)
 	local goal, env = args:unwrap()
 	local orig_env = env
 	local is_operator = false
@@ -470,7 +472,7 @@ local function expression_pairhandler(args, a, b)
 
 	-- if the expression is a list containing prefix and infix expressions,
 	-- parse it into a tree of simple prefix/infix expressions with shunting yard
-	local ok, syntax = shunting_yard(a, b, { n = 0 }, { n = 0 }, a.anchor)
+	local ok, syntax = shunting_yard(a, b, { n = 0 }, { n = 0 }, anchor)
 	if ok then
 		---@cast syntax ConstructedSyntax
 		is_operator, operator_type, operator, left, right = syntax:match({
@@ -494,13 +496,13 @@ local function expression_pairhandler(args, a, b)
 		if not ok then
 			return false, combiner
 		end
-		sargs = metalanguage.list(a.anchor, left)
+		sargs = metalanguage.list(anchor, left)
 	elseif is_operator and operator_type == OperatorType.Infix then
 		ok, combiner = env:get("_" .. operator .. "_")
 		if not ok then
 			return false, combiner
 		end
-		sargs = metalanguage.list(a.anchor, left, right)
+		sargs = metalanguage.list(anchor, left, right)
 	else
 		ok, combiner, env = a:match(
 			{ expression(metalanguage.accept_handler, ExpressionArgs.new(expression_goal.infer, env)) },
@@ -512,7 +514,7 @@ local function expression_pairhandler(args, a, b)
 		end
 		sargs = b
 	end
-	---@cast combiner inferrable
+	---@cast combiner anchored_inferrable
 
 	-- resolve first of the pair as an expression
 	-- typecheck it
@@ -583,11 +585,18 @@ local function expression_pairhandler(args, a, b)
 			local goal_type = goal:unwrap_check()
 			local usage_counts, term = evaluator.check(checkable, env.typechecking_context, goal_type)
 			--print("success: " .. tostring(random))
-			return checkable_term.inferrable(inferrable_term.typed(goal_type, usage_counts, term)), env
+			return checkable_term.inferrable(
+				anchored_inferrable_term(anchor, unanchored_inferrable_term.typed(goal_type, usage_counts, term))
+			),
+				env
 		elseif goal:is_infer() then
 			local resulting_type, usage_counts, term = infer(data, env.typechecking_context)
 			--print("success: " .. tostring(random))
-			return inferrable_term.typed(resulting_type, usage_counts, term), env
+			return anchored_inferrable_term(
+				anchor,
+				unanchored_inferrable_term.typed(resulting_type, usage_counts, term)
+			),
+				env
 		else
 			error("NYI goal " .. goal.kind .. " for operative in expression_pairhandler")
 		end
@@ -634,14 +643,17 @@ local function expression_pairhandler(args, a, b)
 		---@cast tuple checkable
 
 		---@type string | anchored_inferrable | checkable
-		local res = terms.anchored_inferrable_term(
+		local res = anchored_inferrable_term(
 			anchor,
-			inferrable_term.application(inferrable_term.typed(type_of_term, usage_count, term), tuple)
+			unanchored_inferrable_term.application(
+				anchored_inferrable_term(anchor, unanchored_inferrable_term.typed(type_of_term, usage_count, term)),
+				tuple
+			)
 		)
 		---@cast res anchored_inferrable
 
 		if result_info:unwrap_result_info():unwrap_result_info():is_effectful() then
-			local bind = terms.binding.program_sequence(res, a.anchor)
+			local bind = terms.binding.program_sequence(res, anchor)
 			env = env:bind_local(bind)
 			ok, res = env:get("#program-sequence") --TODO refactor
 			if not ok then
@@ -687,23 +699,32 @@ local function expression_pairhandler(args, a, b)
 				typed_term.application(typed_term.literal(result_type), tuple_term),
 				env.typechecking_context.runtime_context
 			)
-			local app = inferrable_term.typed(
-				result_final,
-				usage_array(),
-				typed_term.program_invoke(
-					typed_term.literal(value.effect_elem(terms.lua_prog)),
-					typed_term.tuple_cons(typed_array(term, tuple_term))
+			local app = anchored_inferrable_term(
+				anchor,
+				unanchored_inferrable_term.typed(
+					result_final,
+					usage_array(),
+					typed_term.program_invoke(
+						typed_term.literal(value.effect_elem(terms.lua_prog)),
+						typed_term.tuple_cons(typed_array(term, tuple_term))
+					)
 				)
 			)
 			---@type Environment
-			env = env:bind_local(terms.binding.program_sequence(app, a.anchor))
+			env = env:bind_local(terms.binding.program_sequence(app, anchor))
 			ok, res = env:get("#program-sequence")
 			if not ok then
 				error(res)
 			end
 			---@cast res inferrable
 		else
-			res = inferrable_term.application(inferrable_term.typed(type_of_term, usage_count, term), tuple)
+			res = anchored_inferrable_term(
+				anchor,
+				unanchored_inferrable_term.application(
+					anchored_inferrable_term(anchor, unanchored_inferrable_term.typed(type_of_term, usage_count, term)),
+					tuple
+				)
+			)
 			---@cast res inferrable
 		end
 
@@ -738,7 +759,7 @@ end
 ---@return boolean
 ---@return inferrable | checkable | string
 ---@return Environment?
-local function expression_symbolhandler(args, name)
+local function expression_symbolhandler(args, name, anchor)
 	local goal, env = args:unwrap()
 	--print("looking up symbol", name)
 	--p(env)
@@ -765,10 +786,13 @@ local function expression_symbolhandler(args, name)
 		while front do
 			name = rest
 			front, rest = split_dot_accessors(name)
-			part = inferrable_term.record_elim(
-				part,
-				name_array(front or name),
-				inferrable_term.bound_variable(env.typechecking_context:len() + 1)
+			part = anchored_inferrable_term(
+				anchor,
+				unanchored_inferrable_term.record_elim(
+					part,
+					name_array(front or name),
+					inferrable_term.bound_variable(env.typechecking_context:len() + 1)
+				)
 			)
 		end
 		if goal:is_check() then
@@ -783,12 +807,12 @@ end
 ---@return boolean
 ---@return inferrable | checkable
 ---@return Environment?
-local function expression_valuehandler(args, val)
+local function expression_valuehandler(args, val, anchor)
 	local goal, env = args:unwrap()
 
 	--TODO: proper checkable cases for literal values, requires more checkable terms
 	if goal:is_check() then
-		local ok, inf_term, env = expression_valuehandler(ExpressionArgs.new(expression_goal.infer, env), val)
+		local ok, inf_term, env = expression_valuehandler(ExpressionArgs.new(expression_goal.infer, env), val, anchor)
 		if not ok then
 			return false, inf_term, env
 		end
@@ -803,12 +827,26 @@ local function expression_valuehandler(args, val)
 	if val.type == "f64" then
 		--p(val)
 		return true,
-			inferrable_term.typed(value.host_number_type, usage_array(), typed_term.literal(value.host_value(val.val))),
+			anchored_inferrable_term(
+				anchor,
+				unanchored_inferrable_term.typed(
+					value.host_number_type,
+					usage_array(),
+					typed_term.literal(value.host_value(val.val))
+				)
+			),
 			env
 	end
 	if val.type == "string" then
 		return true,
-			inferrable_term.typed(value.host_string_type, usage_array(), typed_term.literal(value.host_value(val.val))),
+			anchored_inferrable_term(
+				anchor,
+				unanchored_inferrable_term.typed(
+					value.host_string_type,
+					usage_array(),
+					typed_term.literal(value.host_value(val.val))
+				)
+			),
 			env
 	end
 	p("valuehandler error", val)
@@ -900,11 +938,11 @@ local function host_operative(fn, name)
 			error(OperativeError.new(res, syn.anchor, debugstring))
 		end
 		if
-			(goal:is_infer() and inferrable_term.value_check(res))
+			(goal:is_infer() and anchored_inferrable_term.value_check(res))
 			or (goal:is_check() and checkable_term.value_check(res))
 		then
 			-- nothing to do, all is well
-		elseif goal:is_check() and inferrable_term.value_check(res) then
+		elseif goal:is_check() and anchored_inferrable_term.value_check(res) then
 			-- workaround host operatives that ignore goal and assume inferrable
 			---@cast res inferrable
 			res = checkable_term.inferrable(res)
@@ -955,10 +993,13 @@ local function host_operative(fn, name)
 	local value_fn = value.closure("#OPERATIVE_PARAM", tuple_to_tuple_fn, runtime_context())
 
 	local userdata_type = value.tuple_type(terms.empty)
-	return inferrable_term.typed(
-		value.operative_type(value_fn, userdata_type),
-		array(gen.builtin_number)(),
-		typed_term.operative_cons(typed_term.tuple_cons(typed_array()))
+	return anchored_inferrable_term(
+		format.create_anchor(0, 0, "alicorn-expressions.lua:host_operative"),
+		unanchored_inferrable_term.typed(
+			value.operative_type(value_fn, userdata_type),
+			array(gen.builtin_number)(),
+			typed_term.operative_cons(typed_term.tuple_cons(typed_array()))
+		)
 	)
 end
 
@@ -1060,7 +1101,9 @@ collect_tuple = metalanguage.reducer(
 		end
 
 		if goal:is_infer() then
-			return true, inferrable_term.tuple_cons(collected_terms), env
+			return true,
+				anchored_inferrable_term(syntax.anchor, unanchored_inferrable_term.tuple_cons(collected_terms)),
+				env
 		elseif goal:is_check() then
 			U.tag(
 				"flow",
@@ -1145,7 +1188,9 @@ collect_host_tuple = metalanguage.reducer(
 		end
 
 		if goal:is_infer() then
-			return true, inferrable_term.host_tuple_cons(collected_terms), env
+			return true,
+				anchored_inferrable_term(syntax.anchor, unanchored_inferrable_term.host_tuple_cons(collected_terms)),
+				env
 		elseif goal:is_check() then
 			evaluator.typechecker_state:flow(
 				value.host_tuple_type(desc),
@@ -1239,7 +1284,10 @@ local function host_applicative(fn, params, results)
 	local literal_host_fn = terms.typed_term.literal(terms.value.host_value(fn))
 	local host_fn_type =
 		terms.value.host_function_type(build_host_type_tuple(params), build_host_type_tuple(results), result_info_pure)
-	return terms.inferrable_term.typed(host_fn_type, usage_array(), literal_host_fn)
+	return anchored_inferrable_term(
+		format.create_anchor(0, 0, "alicorn-expressions.lua:host_applicative"),
+		unanchored_inferrable_term.typed(host_fn_type, usage_array(), literal_host_fn)
+	)
 end
 
 ---@param syntax ConstructedSyntax

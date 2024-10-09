@@ -271,7 +271,7 @@ binding:define_enum("binding", {
 -- checkable terms need a goal type to typecheck against
 -- stylua: ignore
 checkable_term:define_enum("checkable", {
-	{ "inferrable", { "inferrable_term",  anchored_inferrable_term } },
+	{ "inferrable", { "inferrable_term", anchored_inferrable_term } },
 	{ "tuple_cons", { "elements", array(checkable_term) } },
 	{ "host_tuple_cons", { "elements", array(checkable_term) } },
 	{ "lambda", {
@@ -283,7 +283,7 @@ checkable_term:define_enum("checkable", {
 -- stylua: ignore
 anchored_inferrable_term:define_record("anchored_inferrable", {
 	"anchor", anchor_type,
-	"term", unanchored_inferrable_term
+	"term",   unanchored_inferrable_term,
 })
 -- stylua: ignore
 unanchored_inferrable_term:define_enum("unanchored_inferrable", {
@@ -311,7 +311,7 @@ unanchored_inferrable_term:define_enum("unanchored_inferrable", {
 		"f",   anchored_inferrable_term,
 		"arg", checkable_term,
 	} },
-	{ "tuple_cons", { "elements", array( anchored_inferrable_term) } },
+	{ "tuple_cons", { "elements", array(anchored_inferrable_term) } },
 	{ "tuple_elim", {
 		"names",   array(gen.builtin_string),
 		"subject", anchored_inferrable_term,
@@ -366,43 +366,43 @@ unanchored_inferrable_term:define_enum("unanchored_inferrable", {
 		"annotated_term", checkable_term,
 		"annotated_type", anchored_inferrable_term,
 	} },
-	{ "host_tuple_cons", { "elements", array( anchored_inferrable_term) } }, -- host_value
+	{ "host_tuple_cons", { "elements", array(anchored_inferrable_term) } }, -- host_value
 	{ "host_user_defined_type_cons", {
 		"id",          host_user_defined_id, -- host_user_defined_type
-		"family_args", array( anchored_inferrable_term), -- host_value
+		"family_args", array(anchored_inferrable_term), -- host_value
 	} },
-	{ "host_tuple_type", { "desc",  anchored_inferrable_term } }, -- just like an ordinary tuple type but can only hold host_values
+	{ "host_tuple_type", { "desc", anchored_inferrable_term } }, -- just like an ordinary tuple type but can only hold host_values
 	{ "host_function_type", {
-		"param_type",   anchored_inferrable_term, -- must be a host_tuple_type
+		"param_type",  anchored_inferrable_term, -- must be a host_tuple_type
 		-- host functions can only have explicit arguments
-		"result_type",  anchored_inferrable_term, -- must be a host_tuple_type
+		"result_type", anchored_inferrable_term, -- must be a host_tuple_type
 		"result_info", checkable_term,
 	} },
-	{ "host_wrapped_type", { "type",  anchored_inferrable_term } },
-	{ "host_unstrict_wrapped_type", { "type",  anchored_inferrable_term } },
-	{ "host_wrap", { "content",  anchored_inferrable_term } },
-	{ "host_unstrict_wrap", { "content",  anchored_inferrable_term } },
-	{ "host_unwrap", { "container",  anchored_inferrable_term } },
-	{ "host_unstrict_unwrap", { "container",  anchored_inferrable_term } },
+	{ "host_wrapped_type", { "type", anchored_inferrable_term } },
+	{ "host_unstrict_wrapped_type", { "type", anchored_inferrable_term } },
+	{ "host_wrap", { "content", anchored_inferrable_term } },
+	{ "host_unstrict_wrap", { "content", anchored_inferrable_term } },
+	{ "host_unwrap", { "container", anchored_inferrable_term } },
+	{ "host_unstrict_unwrap", { "container", anchored_inferrable_term } },
 	{ "host_if", {
 		"subject",    checkable_term, -- checkable because we always know must be of host_bool_type
-		"consequent",  anchored_inferrable_term,
-		"alternate",   anchored_inferrable_term,
+		"consequent", anchored_inferrable_term,
+		"alternate",  anchored_inferrable_term,
 	} },
 	{ "host_intrinsic", {
 		"source", checkable_term,
-		"type",    anchored_inferrable_term, --checkable_term,
+		"type",   anchored_inferrable_term, --checkable_term,
 		"anchor", anchor_type,
 	} },
 	{ "program_sequence", {
-		"first",     anchored_inferrable_term,
+		"first",    anchored_inferrable_term,
 		"anchor",   anchor_type,
-		"continue",  anchored_inferrable_term,
+		"continue", anchored_inferrable_term,
 	} },
-	{ "program_end", { "result",  anchored_inferrable_term } },
+	{ "program_end", { "result", anchored_inferrable_term } },
 	{ "program_type", {
-		"effect_type",  anchored_inferrable_term,
-		"result_type",  anchored_inferrable_term,
+		"effect_type", anchored_inferrable_term,
+		"result_type", anchored_inferrable_term,
 	} },
 })
 
@@ -419,98 +419,76 @@ local SubtypeRelation = gen.declare_foreign(gen.metatable_equality(subtype_relat
 ---@module 'types.constraintcause'
 local constraintcause = gen.declare_type()
 
+-- stylua: ignore
 constraintcause:define_enum("constraintcause", {
 	{ "primitive", {
-		"description",
-		gen.builtin_string,
-		"position",
-		anchor_type,
+		"description", gen.builtin_string,
+		"position",    anchor_type,
 	} },
 	{ "composition", {
-		"left",
-		constraintcause,
-		"right",
-		constraintcause,
-		"position",
-		anchor_type,
+		"left",     constraintcause,
+		"right",    constraintcause,
+		"position", anchor_type,
 	} },
-	{
-		"leftcall_discharge",
-		{
-			"call",
-			constraintcause,
-			"constraint",
-			constraintcause,
-			"position",
-			anchor_type,
-		},
-	},
-	{
-		"rightcall_discharge",
-		{
-			"constraint",
-			constraintcause,
-			"call",
-			constraintcause,
-			"position",
-			anchor_type,
-		},
-	},
-	{
-		"lost",
-		{ --Information has been lost, please generate any information you can to help someone debug the lost information in the future
-			"unique_string",
-			gen.builtin_string,
-			"stacktrace",
-			gen.builtin_string,
-			"auxiliary",
-			gen.any_lua_type,
-		},
-	},
+	{ "leftcall_discharge", {
+		"call",       constraintcause,
+		"constraint", constraintcause,
+		"position",   anchor_type,
+	} },
+	{ "rightcall_discharge", {
+		"constraint", constraintcause,
+		"call",       constraintcause,
+		"position",   anchor_type,
+	} },
+	{ "lost", { --Information has been lost, please generate any information you can to help someone debug the lost information in the future
+		"unique_string", gen.builtin_string,
+		"stacktrace",    gen.builtin_string,
+		"auxiliary",     gen.any_lua_type,
+	} },
 })
 
 ---@module 'types.constraintelem'
 -- stylua: ignore
 local constraintelem = gen.declare_enum("constraintelem", {
 	{ "sliced_constrain", {
-		"rel",   SubtypeRelation,
-		"right", typed_term,
+		"rel",      SubtypeRelation,
+		"right",    typed_term,
 		"rightctx", typechecking_context_type,
-		"cause", gen.any_lua_type,
+		"cause",    gen.any_lua_type,
 	} },
 	{ "constrain_sliced", {
-		"left",  typed_term,
+		"left",    typed_term,
 		"leftctx", typechecking_context_type,
-		"rel",   SubtypeRelation,
-		"cause", gen.any_lua_type,
+		"rel",     SubtypeRelation,
+		"cause",   gen.any_lua_type,
 	} },
 	{ "sliced_leftcall", {
-		"arg",   typed_term,
-		"rel",   SubtypeRelation,
-		"right", typed_term,
+		"arg",      typed_term,
+		"rel",      SubtypeRelation,
+		"right",    typed_term,
 		"rightctx", typechecking_context_type,
-		"cause", gen.any_lua_type,
+		"cause",    gen.any_lua_type,
 	} },
 	{ "leftcall_sliced", {
-		"left",  typed_term,
+		"left",    typed_term,
 		"leftctx", typechecking_context_type,
-		"arg",   typed_term,
-		"rel",   SubtypeRelation,
-		"cause", gen.any_lua_type,
+		"arg",     typed_term,
+		"rel",     SubtypeRelation,
+		"cause",   gen.any_lua_type,
 	} },
 	{ "sliced_rightcall", {
-		"rel",   SubtypeRelation,
-		"right", typed_term,
+		"rel",      SubtypeRelation,
+		"right",    typed_term,
 		"rightctx", typechecking_context_type,
-		"arg",   typed_term,
-		"cause", gen.any_lua_type,
+		"arg",      typed_term,
+		"cause",    gen.any_lua_type,
 	} },
 	{ "rightcall_sliced", {
-		"left",  typed_term,
+		"left",    typed_term,
 		"leftctx", typechecking_context_type,
-		"rel",   SubtypeRelation,
-		"arg",   typed_term,
-		"cause", gen.any_lua_type,
+		"rel",     SubtypeRelation,
+		"arg",     typed_term,
+		"cause",   gen.any_lua_type,
 	} },
 })
 
@@ -547,7 +525,10 @@ typed_term:define_enum("typed", {
 		"level_a", typed_term,
 		"level_b", typed_term,
 	} },
-	{ "star", { "level", gen.builtin_number, "depth", gen.builtin_number } },
+	{ "star", {
+		"level", gen.builtin_number,
+		"depth", gen.builtin_number,
+	} },
 	{ "prop", { "level", gen.builtin_number } },
 	{ "tuple_cons", { "elements", array(typed_term) } },
 	--{"tuple_extend", {"base", typed_term, "fields", array(typed_term)}}, -- maybe?
@@ -668,12 +649,12 @@ typed_term:define_enum("typed", {
 		"base",       typed_term,
 	} },
 	{ "effect_row", {
-		"elems",      array(typed_term),
-		"rest",       typed_term,
+		"elems", array(typed_term),
+		"rest",  typed_term,
 	} },
 	{ "effect_row_resolve", {
-		"elems",      set(unique_id),
-		"rest",       typed_term,
+		"elems", set(unique_id),
+		"rest",  typed_term,
 	} },
 	{ "program_type", {
 		"effect_type", typed_term,
@@ -867,7 +848,10 @@ value:define_enum("value", {
 	{ "number_type" },
 	{ "number", { "number", gen.builtin_number } },
 	{ "level", { "level", gen.builtin_number } },
-	{ "star", { "level", gen.builtin_number, "depth", gen.builtin_number } },
+	{ "star", {
+		"level", gen.builtin_number,
+		"depth", gen.builtin_number,
+	} },
 	{ "prop", { "level", gen.builtin_number } },
 	{ "neutral", { "neutral", neutral_value } },
 
@@ -994,7 +978,7 @@ local host_syntax_type = value.host_user_defined_type({ name = "syntax" }, array
 local host_environment_type = value.host_user_defined_type({ name = "environment" }, array(value)())
 local host_typed_term_type = value.host_user_defined_type({ name = "typed_term" }, array(value)())
 local host_goal_type = value.host_user_defined_type({ name = "goal" }, array(value)())
-local host_inferrable_term_type = value.host_user_defined_type({ name = " anchored_inferrable_term" }, array(value)())
+local host_inferrable_term_type = value.host_user_defined_type({ name = "anchored_inferrable_term" }, array(value)())
 local host_checkable_term_type = value.host_user_defined_type({ name = "checkable_term" }, array(value)())
 local host_purity_type = value.host_user_defined_type({ name = "purity" }, array(value)())
 local host_block_purity_type = value.host_user_defined_type({ name = "block_purity" }, array(value)())

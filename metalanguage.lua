@@ -464,7 +464,7 @@ end
 
 local pair_accepters = {
 	Pair = function(self, matcher, extra)
-		return matcher.handler(extra, self[1], self[2])
+		return matcher.handler(extra, self[1], self[2], self.anchor)
 	end,
 }
 
@@ -478,7 +478,7 @@ end
 
 local symbol_accepters = {
 	Symbol = function(self, matcher, extra)
-		return matcher.handler(extra, self[1])
+		return matcher.handler(extra, self[1], self.anchor)
 	end,
 }
 
@@ -491,7 +491,7 @@ end
 
 local value_accepters = {
 	Value = function(self, matcher, extra)
-		return matcher.handler(extra, self[1])
+		return matcher.handler(extra, self[1], self.anchor)
 	end,
 }
 
@@ -508,11 +508,13 @@ end
 
 local nil_accepters = {
 	Nil = function(self, matcher, extra)
-		return matcher.handler(extra)
+		return matcher.handler(extra, self.anchor)
 	end,
 }
 
-local nilval = cons_syntax(nil_accepters)
+local function nilval(anchor)
+	return cons_syntax(nil_accepters, anchor)
+end
 
 ---@param anchor Anchor
 ---@param a ConstructedSyntax
@@ -520,7 +522,7 @@ local nilval = cons_syntax(nil_accepters)
 ---@return ConstructedSyntax
 local function list(anchor, a, ...)
 	if a == nil then
-		return nilval
+		return nilval(anchor)
 	end
 	return pair(anchor, a, list(anchor, ...))
 end

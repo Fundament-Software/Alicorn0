@@ -1573,7 +1573,7 @@ function infer(
 )
 	local anchor, term = inferrable_term:unwrap_anchored_inferrable()
 	-- -> type of term, usage counts, a typed term,
-	if terms.inferrable_term.value_check(inferrable_term) ~= true then
+	if terms.anchored_inferrable_term.value_check(inferrable_term) ~= true then
 		error("infer, inferrable_term: expected an inferrable term")
 	end
 	if terms.typechecking_context_type.value_check(typechecking_context) ~= true then

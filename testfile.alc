@@ -994,9 +994,10 @@ let exit-block = intrinsic
 let host-matcher = new-host-type-family new-host-unique-id("matcher")
 	forall (userdata : host-type, result : tuple-desc-type(host-type)) -> (T : host-type)
 	tuple-of-implicit contravariant(subtyping) covariant(tuple-desc-relation)
+let host-anchor = new-host-type(new-host-unique-id("anchor"))
 
 let nil-handler-type = lambda (userdata : host-type, result : tuple-desc-type(host-type))
-	host-func-type ((ud : userdata)) -> (r : host-tuple-type(result))
+	host-func-type (ud : userdata, anchor : host-anchor) -> (r : host-tuple-type(result))
 let host-matcher-is-nil = lambda (userdata : host-type, result : tuple-desc-type(host-type), accept-handler : nil-handler-type(userdata, result))
 	let inner = intrinsic "return metalanguage.isnil" :
 		host-func-type ((accept-handler : nil-handler-type(userdata, result))) -> ((m : host-matcher(userdata, result)))
@@ -1004,7 +1005,7 @@ let host-matcher-is-nil = lambda (userdata : host-type, result : tuple-desc-type
 	m
 
 let pair-handler-type = lambda (userdata : host-type, result : tuple-desc-type(host-type))
-	host-func-type (ud : userdata, a : host-syntax, b : host-syntax) -> (r : host-tuple-type(result))
+	host-func-type (ud : userdata, a : host-syntax, b : host-syntax, anchor : host-anchor) -> (r : host-tuple-type(result))
 let host-matcher-is-pair = lambda (userdata : host-type, result : tuple-desc-type(host-type), accept-handler : pair-handler-type(userdata, result))
 	let inner = intrinsic "return metalanguage.ispair" :
 		host-func-type ((accept-handler : pair-handler-type(userdata, result))) -> ((m : host-matcher(userdata, result)))
@@ -1012,7 +1013,7 @@ let host-matcher-is-pair = lambda (userdata : host-type, result : tuple-desc-typ
 	m
 
 let symbol-handler-type = lambda (userdata : host-type, result : tuple-desc-type(host-type))
-	host-func-type (ud : userdata, symbol : host-string) -> (r : host-tuple-type(result))
+	host-func-type (ud : userdata, symbol : host-string, anchor : host-anchor) -> (r : host-tuple-type(result))
 let host-matcher-is-symbol = lambda (userdata : host-type, result : tuple-desc-type(host-type), accept-handler : symbol-handler-type(userdata, result))
 	let inner = intrinsic "return metalanguage.issymbol" :
 		host-func-type ((accept-handler : symbol-handler-type(userdata, result))) -> ((m : host-matcher(userdata, result)))
@@ -1020,7 +1021,7 @@ let host-matcher-is-symbol = lambda (userdata : host-type, result : tuple-desc-t
 	m
 
 let value-handler-type = lambda (userdata : host-type, result : tuple-desc-type(host-type))
-	host-func-type (ud : userdata, val : host-literal) -> (r : host-tuple-type(result))
+	host-func-type (ud : userdata, val : host-literal, anchor : host-anchor) -> (r : host-tuple-type(result))
 let host-matcher-is-value = lambda (userdata : host-type, result : tuple-desc-type(host-type), accept-handler : value-handler-type(userdata, result))
 	let inner = intrinsic "return metalanguage.isvalue" :
 		host-func-type ((accept-handler : value-handler-type(userdata, result))) -> ((m : host-matcher(userdata, result)))
