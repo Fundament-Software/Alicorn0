@@ -856,6 +856,7 @@ let func-to-host-func =
 let funcprog-to-host-funcprog =
 	intrinsic
 		""""
+			local tunpack = unpack or table.unpack
 			return function(_type, _valid, afn)
 				return function(...)
 					local args = {...}
@@ -865,10 +866,15 @@ let funcprog-to-host-funcprog =
 						conv_args:append(terms.value.host_value(args[i]))
 					end
 					local res = evaluator.execute_program(evaluator.apply_value(afn, terms.value.tuple_value(conv_args)))
-					if not res:is_host_value() then
-						error "alicorn function converted to native function has failed to create a real value"
+					if not res:is_tuple_value() then
+						print(res)
+						error  "alicorn function converted to native function has failed to create a real value"
 					end
-					return res:unwrap_host_value()
+					local elems = {}
+					for i, v in res:unwrap_tuple_value():ipairs() do
+						elems[i] = v:unwrap_host_value()
+					end
+					return tunpack(elems)
 				end
 			end
 		:
@@ -1968,7 +1974,14 @@ let create-http-server =
 			intrinsic
 				""""
 					local http = require "http"
-					return http.createServer
+					local function createServer(handler)
+						local function wrapper(req, res)
+							evaluator.register_effect_handler(terms.lua_prog, evaluator.host_effect_handler)
+							return handler(req, res)
+						end
+						return http.createServer(wrapper)
+					end
+					return createServer
 				:
 				host-prog-type ((handler : HTTPHandler)) -> ((res : HTTPServer))
 		let (host-cb) = funcprog-to-host-funcprog(wrap(HTTPHandler), host-nil, wrap(callback))
@@ -1977,7 +1990,7 @@ let create-http-server =
 
 let http-server-listen =
 	intrinsic
-		"return function(server, host, port) server:listen(host, port) end"
+		"return function(server, host, port) server:listen(port, host) end"
 		:
 		host-prog-type (server : HTTPServer, host : string, port : host-number) -> ()
 
@@ -2013,17 +2026,22 @@ let print =
 		lambda-prog ((str : string))
 			let () = inner(str)
 
+let runloop =
+	intrinsic "return require 'uv'.run" : (host-prog-type () -> ())
+
 let my-request-handler = lambda-prog (req : HTTPRequest, res : HTTPResponse)
 	print "got a request!"
 	let body = "Hello World!\n"
 	response-set-header res "Content-Type" "text/plain"
 	response-set-header res "Content-Length" num-to-str(strlen(body))
 	response-send-body res body
+	tuple-of-implicit()
 
 let main = lambda-prog ()
 	let server = create-http-server(my-request-handler)
 	http-server-listen server "0.0.0.0" 8080
 	print "server started on localhost:8080"
+	runloop()
 
 # let enum-desc-impl = lambda (syn : host-syntax, env : host-environment, ud : host-unit, goal : host-goal)
 # 	let matcher-t = host-matcher(host-unit, enum-desc-match-result-desc)
@@ -2069,3 +2087,6 @@ sqr 6
 let sqr_overcomplicated = lambda (t, x : t)
 	x * x
 sqr_overcomplicated(host-number, 6)
+
+
+main()
