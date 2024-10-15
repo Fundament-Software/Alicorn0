@@ -832,9 +832,10 @@ let host-funcprog-type-to-funcprog-type =
 
 host-func-type-to-func-type foo host-nil
 
-let func-to-host-func =
+let func-to-host-func-inner =
 	intrinsic
 		""""
+			local tunpack = unpack or table.unpack
 			return function(_type, _valid, afn)
 				return function(...)
 					local args = {...}
@@ -844,16 +845,25 @@ let func-to-host-func =
 						conv_args:append(terms.value.host_value(args[i]))
 					end
 					local res = evaluator.apply_value(afn, terms.value.tuple_value(conv_args))
-					if not res:is_host_value() then
+					if not res:is_tuple_value() then
 						error "alicorn function converted to native function has failed to create a real value"
 					end
-					return res:unwrap_host_value()
+					local elems = {}
+					for i, v in res:unwrap_tuple_value():ipairs() do
+						elems[i] = v:unwrap_host_value()
+					end
+					return tunpack(elems)
 				end
 			end
 		:
 		host-func-type (T : wrapped(host-type), valid : only-accept-host-funcs(T), fn : wrapped(host-func-type-to-func-type(unwrap(T), valid))) -> ((res-fn : unwrap(T)))
 
-let funcprog-to-host-funcprog =
+let func-to-host-func =
+	lambda (T : host-type, valid : only-accept-host-funcs(wrap(T)), fn : host-func-type-to-func-type(T, valid))
+		let (res) = func-to-host-func-inner(wrap(T), valid, wrap(fn))
+		res #TODO figure out why `unwrap(res) here doesn't make a nice type error but fails
+
+let funcprog-to-host-funcprog-inner =
 	intrinsic
 		""""
 			local tunpack = unpack or table.unpack
@@ -880,7 +890,10 @@ let funcprog-to-host-funcprog =
 		:
 		host-func-type (T : wrapped(host-type), valid : only-accept-host-funcprogs(T), fn : wrapped(host-funcprog-type-to-funcprog-type(unwrap(T), valid))) -> ((res-fn : unwrap(T)))
 
-
+let funcprog-to-host-funcprog =
+	lambda (T : host-type, valid : only-accept-host-funcprogs(wrap(T)), fn : host-funcprog-type-to-funcprog-type(T, valid))
+		let (res) = funcprog-to-host-funcprog-inner(wrap(T), valid, wrap(fn))
+		res #TODO figure out why `unwrap(res) here doesn't make a nice type error but fails
 
 let host-if-type = 
 	lambda (T : type_(9, 0))
@@ -1237,6 +1250,7 @@ let get-reducible-constructor = lambda (
 		host-func-type ((r : reducer-type(storage, result2))) -> ((c : reducible-constructor-type(userdata, storage, result2, result)))
 	let (c) = inner(red)
 	c
+
 
 let host-matcher-reducible = lambda (
 		userdata       : host-type,
@@ -1984,7 +1998,7 @@ let create-http-server =
 					return createServer
 				:
 				host-prog-type ((handler : HTTPHandler)) -> ((res : HTTPServer))
-		let (host-cb) = funcprog-to-host-funcprog(wrap(HTTPHandler), host-nil, wrap(callback))
+		let host-cb = funcprog-to-host-funcprog(HTTPHandler, host-nil, callback)
 		let (res) = inner(host-cb)
 		res
 
