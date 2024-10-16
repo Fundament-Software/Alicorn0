@@ -1022,7 +1022,7 @@ let host-matcher-is-value = lambda (userdata : host-type, result : tuple-desc-ty
 
 let reducer-type = new-host-type-family new-host-unique-id("host-reducer")
 	forall (storage : tuple-desc-type(host-type), result2 : tuple-desc-type(host-type)) -> (T : host-type)
-	tuple-of-implicit covariant(tuple-desc-relation) contravariant(tuple-desc-relation)
+	tuple-of-implicit contravariant(tuple-desc-relation) covariant(tuple-desc-relation)
 
 let reducible-handler-type = lambda (userdata : host-type, result2 : tuple-desc-type(host-type), result : tuple-desc-type(host-type))
 	# prepend userdata to result2
@@ -1062,8 +1062,8 @@ let host-matcher-reducible = lambda (
 
 	let accept-handler-type = reducible-handler-type(userdata, result2, result)
 	let accept-handler-desc = tuple-desc-singleton(host-type, accept-handler-type)
-	let red-param-desc = tuple-desc-concat(host-type, accept-handler-desc, storage)
-	let red-result-desc = tuple-desc-singleton(host-type, host-matcher(userdata, result))
+	# let red-param-desc = tuple-desc-concat(host-type, accept-handler-desc, storage)
+	# let red-result-desc = tuple-desc-singleton(host-type, host-matcher(userdata, result))
 
 	let accept-handler-tuple = host-tuple-of(host-type, accept-handler-desc)(accept-handler)
 	let red-param = host-tuple-concat(host-type, accept-handler-desc, storage, accept-handler-tuple, s)
@@ -1083,8 +1083,8 @@ let host-matcher-reducible = lambda (
 			accept-handler : reducible-handler-type(userdata, result2, result))
 		let accept-handler-type = reducible-handler-type(userdata, result2, result)
 		let accept-handler-desc = tuple-desc-singleton(host-type, accept-handler-type)
-		let red-param-desc = tuple-desc-concat(host-type, accept-handler-desc, storage)
-		let red-result-desc = tuple-desc-singleton(host-type, host-matcher(userdata, result))
+		# let red-param-desc = tuple-desc-concat(host-type, accept-handler-desc, storage)
+		# let red-result-desc = tuple-desc-singleton(host-type, host-matcher(userdata, result))
 
 		let accept-handler-tuple = host-tuple-of(host-type, accept-handler-desc)(accept-handler)
 		let red-param = host-tuple-concat(host-type, accept-handler-desc, storage, accept-handler-tuple, s)
@@ -1512,12 +1512,22 @@ let tuple-desc-impl = lambda (syn : host-syntax, env : host-environment, ud : ho
 
 	tuple-of(host-type, operative-result-desc(goal))(args, env)
 
-#let (tuple-desc-op-type, tuple-desc-op) = new-operative(host-unit, host-nil, tuple-desc-impl)
-let tuple-desc-op = into-operative(host-unit, host-nil, tuple-desc-impl)
+#let (tuple-desc-op-type, tuple-desc) = new-operative(host-unit, host-nil, tuple-desc-impl)
+let tuple-desc = into-operative(host-unit, host-nil, tuple-desc-impl)
+# tuple-desc for single-element tuples currently require an extra pair of parens, like lambdas used to.
+# This should eventually be fixed the same way lambdas were fixed.
 
-let my-tuple-desc = tuple-desc-op(x : host-number, y : host-number)
+let my-tuple-desc = tuple-desc(x : host-number, y : host-number)
 let my-tuple-type = tuple-type-explicit(type_(0, 0), my-tuple-desc)
-my-tuple-type
+the my-tuple-type tuple-of-implicit(3, 4)
+
+let symbol-exact =
+	intrinsic "return metalanguage.symbol_exact" :
+		reducer-type(tuple-desc((s : host-string)), tuple-desc())
+
+let inferrable-enum-cons =
+	intrinsic "return terms.inferrable_term.enum_cons" :
+		host-func-type (name : host-string, arg : host-inferrable-term) -> ((res : host-inferrable-term))
 
 let host-if-2-type = forall (
 		result     : host-type,
@@ -1576,10 +1586,10 @@ let id = lambda_implicit (T : type_(10, 0))
 		x
 
 
-# TODO: test this when tuple-desc-op can do more than just star-0
+# TODO: test this when tuple-desc can do more than just star-0
 #let point = lambda_implicit (U : type_(10))
 #	lambda (T : U)
-#		tuple-type(tuple-desc-op(x : T, y : T))
+#		tuple-type(tuple-desc(x : T, y : T))
 #
 #let mkpoint = lambda_implicit (U : type_(10), T : U)
 #	lambda (x : T, y : T)
@@ -1612,17 +1622,6 @@ let (y) = get-mutable-number(my-mutable-number)
 y
 
 let terms-gen-map = new-host-type(new-host-unique-id("terms-gen-map"))
-
-let listtail-accepter-result = lambda (( result : tuple-desc-type(host-type) ))
-	tuple-desc-concat(host-type, result, tuple-desc-singleton(host-type, host-syntax))
-
-let listtail-reducer =
-	lambda_implicit ( userdata : host-type )
-		lambda_implicit ( result : tuple-desc-type(host-type) )
-			lambda (( matcher : host-matcher(userdata, result) ))
-				intrinsic "return metalanguage.listtail" :
-					reducer-type((tuple-desc-empty host-type), result)
-
 
 ####
 	#	---@alias URect userdata
@@ -1882,7 +1881,10 @@ let _*_ = mul
 
 let sqr = lambda (x)
 	x * x
-sqr 6
 let sqr_overcomplicated = lambda (t, x : t)
 	x * x
-sqr_overcomplicated(host-number, 6)
+tuple-of-implicit
+	mk None
+	mk None()
+	mk inj1 6 sqr(6)
+	mk inj2(7, sqr_overcomplicated(host-number, 7))
