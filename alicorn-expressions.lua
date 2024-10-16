@@ -123,6 +123,11 @@ local collect_host_tuple
 ---@field env Environment
 local ExpressionArgs = {}
 
+---@class TopLevelBlockArgs
+---@field exprargs ExpressionArgs
+---@field name string
+local TopLevelBlockArgs = {}
+
 ---Unpack ExpressionArgs into component parts
 ---@return expression_goal
 ---@return Environment
@@ -1212,6 +1217,75 @@ local block = metalanguage.reducer(
 	"block"
 )
 
+local top_level_block = metalanguage.reducer(
+	---@param syntax ConstructedSyntax
+	---@param args TopLevelBlockArgs
+	---@return boolean
+	---@return inferrable|checkable|string
+	---@return Environment?
+	function(syntax, args)
+		local goal, env = args.exprargs:unwrap()
+		assert(goal:is_infer(), "NYI non-infer cases for block")
+		local lastval = inferrable_term.tuple_cons(inferrable_array())
+		local newval
+		local ok, continue = true, true
+
+		--slightly hacky length measurement, but oh well
+		local length, tail = 0, syntax
+		while ok and continue do
+			ok, continue, tail = tail:match({
+				metalanguage.ispair(function(ud, a, b)
+					return true, true, b
+				end),
+				metalanguage.isnil(function(ud)
+					return true, false
+				end),
+			}, metalanguage.failure_handler, nil)
+			if not ok then
+				return false, continue
+			end
+			length = length + 1
+		end
+		continue = true
+		io.write(
+			"\nprocessing "
+				.. tostring(args.name)
+				.. " --- 0 / "
+				.. tostring(length)
+				.. " @ "
+				.. tostring(syntax.anchor)
+		)
+		local progress = 0
+		while ok and continue do
+			ok, continue, newval, syntax, env = syntax:match({
+				metalanguage.ispair(collect_tuple_pair_handler),
+				metalanguage.isnil(collect_tuple_nil_handler),
+			}, metalanguage.failure_handler, ExpressionArgs.new(goal, env))
+			if ok and continue then
+				lastval = newval
+			end
+			progress = progress + 1
+			io.write(
+				"\rprocessing "
+					.. tostring(args.name)
+					.. " --- "
+					.. tostring(progress)
+					.. " / "
+					.. tostring(length)
+					.. " @ "
+					.. tostring(syntax and syntax.anchor or "")
+			) --FIXME wrong anchors
+		end
+		if not ok then
+			io.write("\nFailed!\n")
+			return false, continue
+		end
+		io.write("\nFinished!\n")
+		return true, lastval, env
+	end,
+	"block"
+)
+
 -- example usage of primitive_applicative
 -- add(a, b) = a + b ->
 -- local prim_num = terms.value.prim_number_type
@@ -1278,6 +1352,7 @@ local alicorn_expressions = {
 	inferred_expression = inferred_expression,
 	-- constexpr = constexpr
 	block = block,
+	top_level_block = top_level_block,
 	ExpressionArgs = ExpressionArgs,
 	host_operative = host_operative,
 	host_applicative = host_applicative,
