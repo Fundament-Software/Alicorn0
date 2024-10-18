@@ -1273,8 +1273,8 @@ local top_level_block = metalanguage.reducer(
 					.. " / "
 					.. tostring(length)
 					.. " @ "
-					.. tostring(syntax and syntax.anchor or "")
-			) --FIXME wrong anchors
+					.. tostring(syntax and syntax.anchor or "") --FIXME wrong anchors
+			)
 		end
 		if not ok then
 			io.write("\nFailed!\n")

@@ -1171,20 +1171,20 @@ let host-number-fold-indep = lambda_implicit (T : type_(9, 0))
 				local value_array = terms_gen.declare_array(terms.value)
 				return function(n, f, acc)
 					for i = n, 1, -1 do
-						acc = evaluator.apply_value(f, value.tuple_value(value_array(i, acc)))
+						acc = evaluator.apply_value(f, terms.value.tuple_value(value_array(terms.value.host_value(i), acc)))
 					end
 					return acc
 				end
 			:
 			host-func-type  (
 					n : host-number,
-					f : (unstrict-wrapped (forall (i : host-number, acc : T) -> (resacc : T)) ),
-					acc : unstrict-wrapped(T))
+					f : (wrapped (forall (i : host-number, acc : T) -> (resacc : T)) ),
+					acc : wrapped(T))
 				->
-				((fold  : unstrict-wrapped(T)))
+				((fold  : wrapped(T)))
 	lambda (n : host-number, f : (forall (i  : host-number, acc  : T) -> (resacc  : T)), acc  : T)
-		let  (fold) = inner(n, unstrict-wrap(f), unstrict-wrap(acc))
-		unstrict-unwrap(fold)
+		let  (fold) = inner(n, wrap(f), wrap(acc))
+		unwrap(fold)
 
 let duplicate-tuple-desc = lambda_implicit (U : universe)
 	lambda (n : host-number, T : U)
@@ -1663,7 +1663,7 @@ let do-impl = lambda (syn : host-syntax, env : host-environment, ud : host-unit,
 			1
 			matcher
 
-	let matchers = (make-host-array(1) matcher)
+	#let matchers = (make-host-array(1) matcher)
 
 	let (ok, term, inner_env) =
 		match-syntax
@@ -2178,4 +2178,8 @@ let sqr_overcomplicated = lambda (t, x : t)
 sqr_overcomplicated(host-number, 6)
 
 
-main()
+#main()
+
+
+#the tuple-type-explicit(host-type, duplicate-tuple-desc(1, host-number)) tuple-of-implicit(1)
+#host-array-from-tuple(2, host-tuple-of(host-type, duplicate-tuple-desc(2, host-number))(1, 2))
