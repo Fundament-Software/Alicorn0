@@ -278,7 +278,6 @@ checkable_term:define_enum("checkable", {
 	} },
 	{ "hole" },
 	{ "filled_hole", { "inner", inferrable_term } }, -- TODO: really inferrable? or checkable?
-	-- TODO: enum_cons
 })
 -- inferrable terms can have their type inferred / don't need a goal type
 -- stylua: ignore
