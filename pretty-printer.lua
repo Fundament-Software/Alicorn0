@@ -1,12 +1,13 @@
 ---@class PrettyPrint
+---@field opts PrettyPrintOpts
 local PrettyPrint = {}
 local PrettyPrint_mt = { __index = PrettyPrint }
 
-local prettyprintable = require "./pretty-printable-trait"
+local traits = require "traits"
 
 local kind_field = "kind"
 local hidden_fields = {
-	--[kind_field] = true,
+	[kind_field] = true,
 	capture = function(capture)
 		if capture.bindings and capture.bindings.len then
 			-- FIXME: we can't print all the bindings for a capture currently because we
@@ -23,25 +24,40 @@ local hidden_fields = {
 	end,
 }
 
-function PrettyPrint.new()
-	return setmetatable({}, PrettyPrint_mt)
+---@alias PrettyPrintOpts {default_print: boolean?}
+
+---@return PrettyPrint
+---@param opts PrettyPrintOpts?
+function PrettyPrint:new(opts)
+	opts = opts or {}
+	return setmetatable({ opts = { default_print = opts.default_print } }, PrettyPrint_mt)
 end
 
-function PrettyPrint:any(unknown)
+---@param unknown any
+---@param ... any
+function PrettyPrint:any(unknown, ...)
 	local ty = type(unknown)
 	if ty == "string" then
 		self[#self + 1] = string.format("%q", unknown)
+	elseif ty == "function" then
+		self:func(unknown)
 	elseif ty == "table" then
 		if self.depth and self.depth > 50 then
 			self[#self + 1] = "DEPTH LIMIT EXCEEDED"
 			return
 		end
 		local mt = getmetatable(unknown)
-		local via_trait = mt and prettyprintable[mt]
-		if via_trait and via_trait.print then
-			via_trait.print(unknown, self)
+		local via_trait = mt and traits.pretty_print:get(mt)
+		if via_trait then
+			if self.opts.default_print then
+				via_trait.default_print(unknown, self, ...)
+			else
+				via_trait.pretty_print(unknown, self, ...)
+			end
 		elseif mt and mt.__tostring then
 			self[#self + 1] = tostring(unknown)
+		elseif mt and mt.__call then
+			self:func(mt.__call)
 		else
 			self:table(unknown)
 		end
@@ -95,7 +111,8 @@ function PrettyPrint:_resetcolor()
 	return "\27[0m"
 end
 
-function PrettyPrint:array(array)
+---@param array any[]
+function PrettyPrint:array(array, ...)
 	self:_enter()
 	self[#self + 1] = self:_color()
 	self[#self + 1] = "["
@@ -104,7 +121,7 @@ function PrettyPrint:array(array)
 		if i > 1 then
 			self[#self + 1] = ", "
 		end
-		self:any(v)
+		self:any(v, ...)
 	end
 	self[#self + 1] = self:_color()
 	self[#self + 1] = "]"
@@ -113,39 +130,67 @@ function PrettyPrint:array(array)
 end
 
 ---@param fields table
-function PrettyPrint:table(fields)
+function PrettyPrint:table(fields, ...)
+	-- i considered keeping track of a path of tables
+	-- but it turned really horrible
+	-- just grep its address until you find the original
+	self[#self + 1] = "<"
+	self[#self + 1] = tostring(fields)
+	self[#self + 1] = ">"
+
+	self.table_tracker = self.table_tracker or {}
+	if self.table_tracker[fields] then
+		return
+	end
+	self.table_tracker[fields] = true
+
 	self:_enter()
 
 	local count = 0
-	for k, v in pairs(fields) do
+	local num = 0
+	local nums = {}
+	for k in pairs(fields) do
 		if k == "kind" then
+			self[#self + 1] = " "
 			self[#self + 1] = fields.kind
+		elseif hidden_fields[k] then
+			-- nothing
+		elseif type(k) == "number" then
+			num = num + 1
+			nums[k] = true
 		else
 			count = count + 1
 		end
 	end
-	if #fields > 0 and count == 0 then
+	local seq = false
+	if count == 0 and #nums == num then
+		seq = true
+	end
+	if seq then
 		self[#self + 1] = self:_color()
 		self[#self + 1] = "["
 		self[#self + 1] = self:_resetcolor()
 		for i, v in ipairs(fields) do
-			self:any(v)
+			if i > 1 then
+				self[#self + 1] = ", "
+			end
+			self:any(v, ...)
 		end
 		self[#self + 1] = self:_color()
 		self[#self + 1] = "]"
 		self[#self + 1] = self:_resetcolor()
-	elseif count <= 1 then
-		self[#self + 1] = self:_color()
-		self[#self + 1] = "{"
-		self[#self + 1] = self:_resetcolor()
-		for k, v in pairs(fields) do
-			if not hidden_fields[k] then
-				self:any(v)
-			end
-		end
-		self[#self + 1] = self:_color()
-		self[#self + 1] = "}"
-		self[#self + 1] = self:_resetcolor()
+	-- elseif num == 0 and count == 1 then
+	-- 	self[#self + 1] = self:_color()
+	-- 	self[#self + 1] = "{"
+	-- 	self[#self + 1] = self:_resetcolor()
+	-- 	for k, v in pairs(fields) do
+	-- 		if not hidden_fields[k] then
+	-- 			self:any(v, ...)
+	-- 		end
+	-- 	end
+	-- 	self[#self + 1] = self:_color()
+	-- 	self[#self + 1] = "}"
+	-- 	self[#self + 1] = self:_resetcolor()
 	else
 		self[#self + 1] = self:_color()
 		self[#self + 1] = " {\n"
@@ -155,8 +200,10 @@ function PrettyPrint:table(fields)
 			if not hidden_fields[k] then
 				self:_prefix()
 				self[#self + 1] = k
+				self[#self + 1] = self:_color()
 				self[#self + 1] = " = "
-				self:any(v)
+				self[#self + 1] = self:_resetcolor()
+				self:any(v, ...)
 				self[#self + 1] = ",\n"
 			end
 		end
@@ -170,8 +217,9 @@ function PrettyPrint:table(fields)
 	self:_exit()
 end
 
+---@param kind string
 ---@param fields table
-function PrettyPrint:record(kind, fields)
+function PrettyPrint:record(kind, fields, ...)
 	local startLen = #self
 	self:_enter()
 
@@ -188,7 +236,7 @@ function PrettyPrint:record(kind, fields)
 		end
 		self[#self + 1] = "("
 		self[#self + 1] = self:_resetcolor()
-		self:any(v)
+		self:any(v, ...)
 		self[#self + 1] = self:_color()
 		self[#self + 1] = ")"
 	else
@@ -203,8 +251,10 @@ function PrettyPrint:record(kind, fields)
 			end
 			self:_prefix()
 			self[#self + 1] = k
+			self[#self + 1] = self:_color()
 			self[#self + 1] = " = "
-			self:any(v)
+			self[#self + 1] = self:_resetcolor()
+			self:any(v, ...)
 			self[#self + 1] = ",\n"
 		end
 		self[#self + 1] = self:_color()
@@ -229,21 +279,53 @@ function PrettyPrint:unit(name)
 	self[#self + 1] = name
 end
 
+function PrettyPrint:func(f)
+	local d = debug.getinfo(f, "Su")
+	local params = {}
+	for i = 1, d.nparams do
+		params[#params + 1] = debug.getlocal(f, i)
+	end
+	if d.isvararg then
+		params[#params + 1] = "..."
+	end
+	self[#self + 1] =
+		string.format("%s function(%s): %s:%d", d.what, table.concat(params, ", "), d.source, d.linedefined)
+end
+
 function PrettyPrint_mt:__tostring()
 	return table.concat(self, "")
 end
 
-_G["p"] = function(...)
+local function pretty_print(unknown, ...)
+	local pp = PrettyPrint:new()
+	pp:any(unknown, ...)
+	return tostring(pp)
+end
+
+local function default_print(unknown, ...)
+	local pp = PrettyPrint:new({ default_print = true })
+	pp:any(unknown, ...)
+	return tostring(pp)
+end
+
+local function s(...)
 	local res = {}
 	for i, v in ipairs { ... } do
-		local pp = PrettyPrint:new()
-		pp:any(v)
-		res[i] = tostring(pp)
+		res[i] = pretty_print(v)
 	end
-	print(table.concat(res))
+	return table.concat(res, "    ")
 end
+
+local function p(...)
+	print(s(...))
+end
+
+_G["p"] = p
 
 return {
 	PrettyPrint = PrettyPrint,
-	prettyprintable = prettyprintable,
+	pretty_print = pretty_print,
+	default_print = default_print,
+	s = s,
+	p = p,
 }

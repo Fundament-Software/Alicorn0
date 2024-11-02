@@ -3,3 +3,8 @@
 /luvit.exe
 /.direnv/
 /.pre-commit-config.yaml
+/deps/
+/luaunit.lua
+/.vscode/
+/target/
+Cargo.lock

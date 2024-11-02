@@ -1,21 +1,25 @@
-local prettyprintable = require "./pretty-printable-trait"
+local derivers = require "derivers"
+local pretty_printer = require "pretty-printer"
+local traits = require "traits"
+
 -- record and enum are nominative types.
 -- this means that two record types, given the same arguments, are distinct.
 -- values constructed from one type are of a different type compared to values
 -- constructed from the other.
 -- (likewise for enum)
 
--- foreign, map, and array are structural types.
+-- foreign, map, set, and array are structural types.
 -- this means that two map types, given the same key-type and value-type, alias
--- each other.
--- values constructed from one type are, at a high level, of the same type
--- as values constructed from the other.
--- (likewise for array, and foreign given the same value_check function;
+-- each other. values constructed from one type are of the same type as values
+-- constructed from the other.
+-- (likewise for set and array, and foreign given the same value_check function;
 -- foreign values are constructed elsewhere)
+
+---@alias ValueCheckFn fun(val: any): boolean
 
 ---@class Type
 ---@field value_check ValueCheckFn
----@alias ValueCheckFn fun(val: Type): boolean
+---@field derive fun(Type, Deriver, ...)
 
 ---@class Value
 ---@field kind string
@@ -71,6 +75,7 @@ local function validate_params_types(kind, params, params_types)
 	-- ensure there are at least as many param types as there are params
 	-- also ensure there is at least one param
 	local at_least_one = false
+	local params_set = {}
 	for i, v in ipairs(params) do
 		at_least_one = true
 		local param_type = params_types[i]
@@ -83,24 +88,39 @@ local function validate_params_types(kind, params, params_types)
 					.. " (possible typo?)"
 			)
 		end
+		if params_set[v] then
+			error(
+				"constructor " .. kind .. " must have unique parameter names ('" .. v .. "' was given more than once)"
+			)
+		end
+		params_set[v] = true
 	end
 	if not at_least_one then
-		error("trying to make a record type, or a record variant of an enum type, with no parameters")
+		error("constructor " .. kind .. " must take at least one parameter, or be changed to a unit")
 	end
 end
 
--- TODO: cons turns from a table to a callable table. how to conveniently annotate this?
+---@class RecordType: Type
+---@field derive fun(self: RecordType, deriver: Deriver, ...)
+---@field _kind string
+---@field __eq fun(left: RecordValue, right: RecordValue): boolean
+---@field __index table
+---@field __tostring function(RecordValue): string
+
+---@class RecordValue: Value
+---@field pretty_print fun(RecordValue, ...)
+---@field default_print fun(RecordValue, ...)
+
 ---@param self table
 ---@param cons table
 ---@param kind string
 ---@param params_with_types ParamsWithTypes
----@return table cons
 ---@return RecordDeriveInfo derive_info
 local function gen_record(self, cons, kind, params_with_types)
 	local params, params_types = parse_params_with_types(params_with_types)
 	validate_params_types(kind, params, params_types)
 	setmetatable(cons, {
-		__call = function(cons, ...)
+		__call = function(_, ...)
 			local args = { ... }
 			local val = {
 				kind = kind,
@@ -109,8 +129,13 @@ local function gen_record(self, cons, kind, params_with_types)
 				local argi = args[i]
 				-- type-check constructor arguments
 				if params_types[i].value_check(argi) ~= true then
-					p("value of parameter " .. v .. ":", argi)
-					p("expected type of parameter " .. v .. " is :", params_types[i])
+					print("value of parameter " .. v .. ": (follows)")
+					p(argi)
+					print("expected type of parameter " .. v .. " is :", params_types[i])
+					--for i = 2, 25 do
+					--	local d = debug.getinfo(i, "Sln")
+					--	print(string.format("%s %s %s: %s:%d", d.what, d.namewhat, d.name, d.source, d.currentline))
+					--end
 					error("wrong argument type passed to constructor " .. kind .. ", parameter '" .. v .. "'")
 				end
 				val[v] = argi
@@ -119,28 +144,44 @@ local function gen_record(self, cons, kind, params_with_types)
 			return val
 		end,
 	})
+	---@type RecordDeriveInfo
 	local derive_info = {
 		kind = kind,
 		params = params,
 		params_types = params_types,
 	}
-	return cons, derive_info
+	return derive_info
 end
 
----@class Record: Type
----@field derive fun(self: Record, deriver: Deriver)
+local function record_tostring(self)
+	return "terms-gen record: " .. self._kind
+end
 
 ---@param self table
 ---@param kind string
 ---@param params_with_types ParamsWithTypes
----@return Record self
+---@return RecordType self
 local function define_record(self, kind, params_with_types)
-	local self, derive_info = gen_record(self, self, kind, params_with_types)
-	function self:derive(deriver)
-		return deriver.record(self, derive_info)
-	end
+	local derive_info = gen_record(self, self, kind, params_with_types)
+	---@cast self RecordType
+	getmetatable(self).__tostring = record_tostring
 	self.value_check = metatable_equality(self)
-	---@cast self Record
+	function self:derive(deriver, ...)
+		return deriver.record(self, derive_info, ...)
+	end
+	self._kind = kind
+	self.__index = {
+		pretty_print = pretty_printer.pretty_print,
+		default_print = pretty_printer.default_print,
+	}
+	traits.value_name:implement_on(self, {
+		value_name = function()
+			return kind
+		end,
+	})
+	self:derive(derivers.eq)
+	self:derive(derivers.unwrap)
+	self:derive(derivers.diff)
 	return self
 end
 
@@ -152,6 +193,7 @@ local function gen_unit(self, kind)
 	local val = {
 		kind = kind,
 	}
+	---@type UnitDeriveInfo
 	local derive_info = {
 		kind = kind,
 	}
@@ -159,67 +201,134 @@ local function gen_unit(self, kind)
 	return val, derive_info
 end
 
----@class Enum: Type
----@field derive fun(self: Enum, deriver: Deriver)
+---@class EnumType: Type
+---@field derive fun(self: EnumType, deriver: Deriver, ...)
+---@field _name string
+---@field __eq fun(left: EnumValue, right: EnumValue): boolean
+---@field __index table
+---@field __tostring function(EnumValue): string
 
----@alias Variants { [1]: string, [2]: ParamsWithTypes }[]
+---@class EnumValue: Value
+---@field pretty_print fun(EnumValue, ...)
+---@field default_print fun(EnumValue, ...)
+
+local enum_type_mt = {
+	__tostring = function(self)
+		return "terms-gen enum: " .. self._name
+	end,
+}
+
+---@alias Variants [ string, ParamsWithTypes ][]
 
 ---@param self table
 ---@param name string
 ---@param variants Variants
----@return Enum self
+---@return EnumType self
 local function define_enum(self, name, variants)
-	setmetatable(self, nil)
+	setmetatable(self, enum_type_mt)
+	---@cast self EnumType
+	self.value_check = metatable_equality(self)
 	local derive_variants = {}
 	for i, v in ipairs(variants) do
 		local vname = v[1]
 		local vparams_with_types = v[2]
-		local kind = name .. "." .. vname
+		local vkind = name .. "." .. vname
+		if self[vname] then
+			error("enum variant " .. vkind .. " is defined multiple times")
+		end
 		derive_variants[i] = vname
 		if vparams_with_types then
-			local record_cons, record_info = gen_record(self, {}, kind, vparams_with_types)
+			local record_cons = {}
+			local record_info = gen_record(self, record_cons, vkind, vparams_with_types)
 			self[vname] = record_cons
 			derive_variants[vname] = {
-				type = "record",
+				type = derivers.EnumDeriveInfoVariantKind.Record,
 				info = record_info,
 			}
 		else
-			local unit_val, unit_info = gen_unit(self, kind)
+			local unit_val, unit_info = gen_unit(self, vkind)
 			self[vname] = unit_val
 			derive_variants[vname] = {
-				type = "unit",
+				type = derivers.EnumDeriveInfoVariantKind.Unit,
 				info = unit_info,
 			}
 		end
 	end
+	---@type EnumDeriveInfo
 	local derive_info = {
 		name = name,
 		variants = derive_variants,
 	}
-	function self:derive(deriver)
-		return deriver.enum(self, derive_info)
+	function self:derive(deriver, ...)
+		return deriver.enum(self, derive_info, ...)
 	end
-	self.value_check = metatable_equality(self)
-	---@cast self Enum
+	self._name = name
+	self.__index = {
+		pretty_print = pretty_printer.pretty_print,
+		default_print = pretty_printer.default_print,
+	}
+	traits.value_name:implement_on(self, {
+		value_name = function()
+			return name
+		end,
+	})
+	self:derive(derivers.eq)
+	self:derive(derivers.is)
+	self:derive(derivers.unwrap)
+	self:derive(derivers.as)
+	self:derive(derivers.diff)
 	return self
 end
 
----@class Foreign: Type
+---@class ForeignType: Type
+---@field lsp_type string
+
+local foreign_type_mt = {
+	__tostring = function(self)
+		return "terms-gen foreign: " .. self.lsp_type
+	end,
+}
 
 ---@param self table
 ---@param value_check ValueCheckFn
----@return Foreign self
-local function define_foreign(self, value_check)
-	setmetatable(self, nil)
+---@param lsp_type string
+---@return ForeignType self
+local function define_foreign(self, value_check, lsp_type)
+	setmetatable(self, foreign_type_mt)
+	---@cast self ForeignType
 	self.value_check = value_check
-	---@cast self Foreign
+	self.lsp_type = lsp_type
+	traits.value_name:implement_on(self, {
+		value_name = function()
+			return lsp_type
+		end,
+	})
 	return self
 end
+
+---@class MapType: Type
+---@field key_type Type
+---@field value_type Type
+---@field __index table
+---@field __newindex function
+---@field __pairs function(MapValue): function, MapValue, Value?
+---@field __tostring function(MapValue): string
+
+---@class MapValue: Value
+---@field _map { [Value]: Value }
+---@field set fun(MapValue, Value, Value)
+---@field reset fun(MapValue, Value)
+---@field get fun(MapValue, Value): Value?
+---@field pairs fun(MapValue): function, MapValue, Value?
+---@field copy fun(MapValue, MapValue?, function?): MapValue
+---@field union fun(MapValue, MapValue, function): MapValue
+---@field pretty_print fun(MapValue, ...)
+---@field default_print fun(MapValue, ...)
 
 local map_type_mt = {
 	__call = function(self)
 		local val = {
-			__map = {},
+			_map = {},
 		}
 		setmetatable(val, self)
 		return val
@@ -227,69 +336,93 @@ local map_type_mt = {
 	__eq = function(left, right)
 		return left.key_type == right.key_type and left.value_type == right.value_type
 	end,
+	__tostring = function(self)
+		return "terms-gen map key:<" .. tostring(self.key_type) .. "> val:<" .. tostring(self.value_type) .. ">"
+	end,
 }
 
-local map_methods = {
-	pairs = function(self)
-		return pairs(self.__map)
-	end,
-	pretty_print = function(self, prefix)
-		local np = prefix .. " "
-		local parts = {}
-		local i = 1
-		for k, v in pairs(self.__map) do
-			local function pp(x, p)
-				return ((type(x) == "table" and x.pretty_print) or tostring)(x, p)
+local function gen_map_methods(self, key_type, value_type)
+	return {
+		set = function(val, key, value)
+			if key_type.value_check(key) ~= true then
+				p("map-set", key_type, value_type)
+				p(key)
+				error("wrong key type passed to map:set")
 			end
-			parts[i] = string.format("%s = %s", pp(k, prefix), pp(v, np))
-			i = i + 1
-		end
-		return string.format("[\n" .. np .. "%s\n" .. prefix .. "]", table.concat(parts, ",\n" .. np))
-	end,
-}
-
-local function gen_map_fns(key_type, value_type)
-	local function index(self, key)
-		local method = map_methods[key]
-		if method then
-			return method
-		end
-		if key_type.value_check(key) ~= true then
-			p("map-index", key_type, value_type)
-			p(key)
-			error("wrong key type passed to indexing")
-		end
-		return self.__map[key]
-	end
-	local function newindex(self, key, value)
-		local method = map_methods[key]
-		if method then
-			p(method)
-			error("attempted index-assignment that shadows a method")
-		end
-		if key_type.value_check(key) ~= true then
-			p("map-index-assign", key_type, value_type)
-			p(key)
-			error("wrong key type passed to index-assignment")
-		end
-		if value_type.value_check(value) ~= true then
-			p("map-index-assign", key_type, value_type)
-			p(value)
-			error("wrong value type passed to index-assignment")
-		end
-		self.__map[key] = value
-	end
-	return index, newindex
+			if value_type.value_check(value) ~= true then
+				p("map-set", key_type, value_type)
+				p(value)
+				error("wrong value type passed to map:set")
+			end
+			val._map[key] = value
+		end,
+		reset = function(val, key)
+			if key_type.value_check(key) ~= true then
+				p("map-reset", key_type, value_type)
+				p(key)
+				error("wrong key type passed to map:reset")
+			end
+			val._map[key] = nil
+		end,
+		get = function(val, key)
+			if key_type.value_check(key) ~= true then
+				p("map-get", key_type, value_type)
+				p(key)
+				error("wrong key type passed to map:get")
+			end
+			return val._map[key]
+		end,
+		pairs = function(val)
+			return pairs(val._map)
+		end,
+		copy = function(val, onto, conflict)
+			if not onto then
+				onto = self()
+			elseif not conflict then
+				error("map:copy onto requires a conflict resolution function")
+			end
+			local rt = getmetatable(onto)
+			if self ~= rt then
+				error("map:copy must be passed maps of the same type")
+			end
+			for k, v in val:pairs() do
+				local old = onto:get(k)
+				if old then
+					onto:set(k, conflict(old, v))
+				else
+					onto:set(k, v)
+				end
+			end
+			return onto
+		end,
+		union = function(left, right, conflict)
+			local rt = getmetatable(right)
+			if self ~= rt then
+				error("map:union must be passed maps of the same type")
+			end
+			local new = left:copy()
+			right:copy(new, conflict)
+			return new
+		end,
+		pretty_print = pretty_printer.pretty_print,
+		default_print = pretty_printer.default_print,
+	}
 end
 
----@class Map: Type
+local function map_newindex()
+	error("index-assignment of maps is no longer allowed. use :set()")
+end
 
--- TODO: memoize? otherwise LOTS of tables will be constructed,
--- through repeated calls to declare_map
+local function map_pretty_print(self, pp, ...)
+	return pp:table(self._map, ...)
+end
+
+local map_memo = {}
+
 ---@param self table
 ---@param key_type Type
 ---@param value_type Type
----@return Map self
+---@return MapType self
 local function define_map(self, key_type, value_type)
 	if
 		type(key_type) ~= "table"
@@ -299,16 +432,215 @@ local function define_map(self, key_type, value_type)
 	then
 		error("trying to set the key or value type to something that isn't a type (possible typo?)")
 	end
+
+	if not map_memo[key_type] then
+		map_memo[key_type] = {}
+	end
+	if map_memo[key_type][value_type] then
+		return map_memo[key_type][value_type]
+	else
+		map_memo[key_type][value_type] = self
+	end
+
 	setmetatable(self, map_type_mt)
-	self.key_type = key_type
-	self.value_type = value_type
-	self.__index, self.__newindex = gen_map_fns(key_type, value_type)
-	self.__pairs = map_methods.pairs
+	---@cast self MapType
 	-- NOTE: this isn't primitive equality; this type has a __eq metamethod!
 	self.value_check = metatable_equality(self)
-	---@cast self Map
+	self.key_type = key_type
+	self.value_type = value_type
+	self.__index = gen_map_methods(self, key_type, value_type)
+	self.__newindex = map_newindex
+	self.__pairs = self.__index.pairs
+	self.__tostring = self.__index.pretty_print
+	traits.pretty_print:implement_on(self, {
+		pretty_print = map_pretty_print,
+		default_print = map_pretty_print,
+	})
+	traits.value_name:implement_on(self, {
+		value_name = function()
+			-- TODO: augment this with generics
+			return "MapValue"
+		end,
+	})
 	return self
 end
+
+---@class SetType: Type
+---@field key_type Type
+---@field __index table
+---@field __pairs function(SetValue): function, SetValue, Value?
+---@field __tostring function(SetValue): string
+
+---@class SetValue: Value
+---@field _set { [Value]: boolean }
+---@field put fun(SetValue, Value)
+---@field remove fun(SetValue, Value)
+---@field test fun(SetValue, Value): boolean?
+---@field pairs function(SetValue): function, SetValue, Value?
+---@field copy fun(SetValue, SetValue?): SetValue
+---@field union fun(SetValue, SetValue): SetValue
+---@field subtract fun(SetValue, SetValue): SetValue
+---@field superset fun(SetValue, SetValue): boolean
+---@field pretty_print fun(SetValue, ...)
+---@field default_print fun(SetValue, ...)
+
+local set_type_mt = {
+	__call = function(self)
+		local val = {
+			_set = {},
+		}
+		setmetatable(val, self)
+		return val
+	end,
+	__eq = function(left, right)
+		return left.key_type == right.key_type
+	end,
+	__tostring = function(self)
+		return "terms-gen set key:<" .. tostring(self.key_type) .. ">"
+	end,
+}
+
+local function gen_set_methods(self, key_type)
+	return {
+		put = function(val, key)
+			if key_type.value_check(key) ~= true then
+				p("set-put", key_type)
+				p(key)
+				error("wrong key type passed to set:put")
+			end
+			val._set[key] = true
+		end,
+		remove = function(val, key)
+			if key_type.value_check(key) ~= true then
+				p("set-remove", key_type)
+				p(key)
+				error("wrong key type passed to set:remove")
+			end
+			val._set[key] = nil
+		end,
+		test = function(val, key)
+			if key_type.value_check(key) ~= true then
+				p("set-test", key_type)
+				p(key)
+				error("wrong key type passed to set:test")
+			end
+			return val._set[key]
+		end,
+		-- just ignore the second value of the iterations :)
+		pairs = function(val)
+			return pairs(val._set)
+		end,
+		copy = function(val, onto)
+			if not onto then
+				onto = self()
+			end
+			local rt = getmetatable(onto)
+			if self ~= rt then
+				error("set:copy must be passed sets of the same type")
+			end
+			for k in val:pairs() do
+				onto:put(k)
+			end
+			return onto
+		end,
+		union = function(left, right)
+			local rt = getmetatable(right)
+			if self ~= rt then
+				error("set:union must be passed sets of the same type")
+			end
+			local new = left:copy()
+			right:copy(new)
+			return new
+		end,
+		subtract = function(left, right)
+			local rt = getmetatable(right)
+			if self ~= rt then
+				error("set:subtract must be passed sets of the same type")
+			end
+			local new = left:copy()
+			for k in right:pairs() do
+				new:remove(k)
+			end
+			return new
+		end,
+		superset = function(left, right)
+			local rt = getmetatable(right)
+			if self ~= rt then
+				error("set:superset must be passed sets of the same type")
+			end
+			for k in right:pairs() do
+				if not left:test(k) then
+					return false
+				end
+			end
+			return true
+		end,
+		pretty_print = pretty_printer.pretty_print,
+		default_print = pretty_printer.default_print,
+	}
+end
+
+local function set_pretty_print(self, pp, ...)
+	return pp:table(self._set, ...)
+end
+
+local set_memo = {}
+
+---@param self table
+---@param key_type Type
+---@return SetType self
+local function define_set(self, key_type)
+	if type(key_type) ~= "table" or type(key_type.value_check) ~= "function" then
+		error("trying to set the key or value type to something that isn't a type (possible typo?)")
+	end
+
+	if set_memo[key_type] then
+		return set_memo[key_type]
+	else
+		set_memo[key_type] = self
+	end
+
+	setmetatable(self, set_type_mt)
+	---@cast self SetType
+	-- NOTE: this isn't primitive equality; this type has a __eq metamethod!
+	self.value_check = metatable_equality(self)
+	self.key_type = key_type
+	self.__index = gen_set_methods(self, key_type)
+	self.__pairs = self.__index.pairs
+	self.__tostring = self.__index.pretty_print
+	traits.pretty_print:implement_on(self, {
+		pretty_print = set_pretty_print,
+		default_print = set_pretty_print,
+	})
+	traits.value_name:implement_on(self, {
+		value_name = function()
+			-- TODO: augment this with generics
+			return "SetValue"
+		end,
+	})
+	return self
+end
+
+---@class ArrayType: Type
+---@field value_type Type
+---@field methods table
+---@field __eq function(ArrayValue, ArrayValue): boolean
+---@field __index function
+---@field __newindex function
+---@field __ipairs function(ArrayValue): function, ArrayValue, integer
+---@field __len function(ArrayValue): integer
+---@field __tostring function(ArrayValue): string
+
+---@class ArrayValue: Value
+---@field n integer
+---@field array Value[]
+---@field ipairs fun(ArrayValue): function, ArrayValue, integer
+---@field len fun(ArrayValue): integer
+---@field append fun(ArrayValue, Value)
+---@field copy fun(ArrayValue, integer?, integer?): ArrayValue
+---@field unpack fun(ArrayValue): ...
+---@field pretty_print fun(ArrayValue, ...)
+---@field default_print fun(ArrayValue, ...)
 
 local array_type_mt = {
 	__call = function(self, ...)
@@ -326,72 +658,99 @@ local array_type_mt = {
 	__eq = function(left, right)
 		return left.value_type == right.value_type
 	end,
+	__tostring = function(self)
+		return "terms-gen array val:<" .. tostring(self.value_type) .. ">"
+	end,
 }
 
-local array_methods = {
-	ipairs = function(self)
-		return ipairs(self.array)
-	end,
-	len = function(self)
-		return self.n
-	end,
-	append = function(self, val)
-		self[self.n + 1] = val
-	end,
-	eq = function(self, other)
-		if #self ~= #other then
+local function array_next(state, control)
+	local i = control + 1
+	if i > state:len() then
+		return nil
+	else
+		return i, state[i]
+	end
+end
+
+local function array_unpack(array, i, ...)
+	if i > 0 then
+		return array_unpack(array, i - 1, array[i], ...)
+	else
+		return ...
+	end
+end
+
+local function gen_array_methods(self, value_type)
+	return {
+		ipairs = function(val)
+			return array_next, val, 0
+		end,
+		len = function(val)
+			return val.n
+		end,
+		append = function(val, value)
+			val[val.n + 1] = value
+		end,
+		copy = function(val, first, last)
+			first = first or 1
+			last = last or val:len()
+			local new = self()
+			for i = first, last do
+				new:append(val.array[i])
+			end
+			return new
+		end,
+		unpack = function(val)
+			return array_unpack(val.array, val.n)
+		end,
+		pretty_print = pretty_printer.pretty_print,
+		default_print = pretty_printer.default_print,
+	}
+end
+
+local function array_eq_fn(left, right)
+	if getmetatable(left) ~= getmetatable(right) then
+		return false
+	end
+	if left:len() ~= right:len() then
+		return false
+	end
+	for i = 1, left:len() do
+		if left[i] ~= right[i] then
 			return false
 		end
-		for i = 1, #self do
-			if self[i] ~= other[i] then
-				return false
-			end
-		end
-		return true
-	end,
-	copy = function(self, first, last)
-		local first = first or 1
-		local last = last or #self
-		local mt = getmetatable(self)
-		local new = mt()
-		for i = first, last do
-			new:append(self.array[i])
-		end
-		return new
-	end,
-	unpack = function(self)
-		return table.unpack(self.array)
-	end,
-	pretty_print = function(self, prefix)
-		local parts = {}
-		for i, v in ipairs(self.array) do
-			parts[i] = ((type(v) == "table" and v.pretty_print) or tostring)(v, prefix)
-		end
-		return string.format("[%s]", table.concat(parts, ", "))
-	end,
-}
+	end
+	return true
+end
 
-local function gen_array_fns(value_type)
+local function gen_array_index_fns(t, value_type)
 	local function index(self, key)
-		local method = array_methods[key]
+		local method = t.methods[key]
 		if method then
 			return method
 		end
 		if type(key) ~= "number" then
 			p("array-index", value_type)
 			p(key)
-			error("wrong key type passed to indexing: " .. key)
+			error("wrong key type passed to array indexing")
 		end
 		-- check if integer
 		-- there are many nice ways to do this in lua >=5.3
-		-- unfortunately, this is not us
+		-- unfortunately, this is not part of luajit/luvit
 		if math.floor(key) ~= key then
 			p(key)
-			error("key passed to indexing is not an integer")
+			error("key passed to array indexing is not an integer")
 		end
+		-- puc-rio lua 5.3 ipairs() always produces an iterator that looks for the first nil
+		-- instead of deferring to __ipairs metamethod like in 5.2
+		--if key == self.n + 1 then
+		--	return nil
+		--end
+		-- above is commented out because it turns out we want nil-resistant iterators
+		-- so we should make sure to use the :ipairs() method instead
 		if key < 1 or key > self.n then
 			p(key, self.n)
-			error("key passed to indexing is out of bounds")
+			error("key passed to array indexing is out of bounds (read code comment above)")
 		end
 		return self.array[key]
 	end
@@ -399,21 +758,21 @@ local function gen_array_fns(value_type)
 		if type(key) ~= "number" then
 			p("array-index", value_type)
 			p(key)
-			error("wrong key type passed to index-assignment")
+			error("wrong key type passed to array index-assignment")
 		end
 		if math.floor(key) ~= key then
 			p(key)
-			error("key passed to index-assignment is not an integer")
+			error("key passed to array index-assignment is not an integer")
 		end
 		-- n+1 can be used to append
 		if key < 1 or key > self.n + 1 then
 			p(key, self.n)
-			error("key passed to index-assignment is out of bounds")
+			error("key passed to array index-assignment is out of bounds")
 		end
 		if value_type.value_check(value) ~= true then
 			p("array-index-assign", value_type)
 			p(value)
-			error("wrong value type passed to index-assignment")
+			error("wrong value type passed to array index-assignment")
 		end
 		self.array[key] = value
 		if key > self.n then
@@ -423,35 +782,114 @@ local function gen_array_fns(value_type)
 	return index, newindex
 end
 
-local function array_prettyprintable(self, printer)
-	return printer:array(self.array)
+local function array_pretty_print(self, pp, ...)
+	return pp:array(self.array, ...)
 end
 
----@class Array: Type
+local function gen_array_diff_fn(self, value_type)
+	local function diff_fn(left, right)
+		print("diffing array...")
+		print("value_type: " .. tostring(value_type))
+		local rt = getmetatable(right)
+		if self ~= rt then
+			print("unequal types!")
+			print(self)
+			print(rt)
+			print("stopping diff")
+			return
+		end
+		if left:len() ~= right:len() then
+			print("unequal lengths!")
+			print(left:len())
+			print(right:len())
+			print("stopping diff")
+			return
+		end
+		local n = 0
+		local diff_elems = {}
+		for i = 1, left:len() do
+			if left[i] ~= right[i] then
+				n = n + 1
+				diff_elems[n] = i
+			end
+		end
+		if n == 0 then
+			print("no difference")
+			print("stopping diff")
+			return
+		elseif n == 1 then
+			local d = diff_elems[1]
+			print("difference in element: " .. tostring(d))
+			local diff_impl = traits.diff:get(value_type)
+			if diff_impl then
+				-- tail call
+				return diff_impl.diff(left[d], right[d])
+			else
+				print("stopping diff (missing diff impl)")
+				return
+			end
+		else
+			print("difference in multiple elements:")
+			for i = 1, n do
+				print(diff_elems[i])
+			end
+			print("stopping diff")
+			return
+		end
+	end
+	return diff_fn
+end
 
--- TODO: see define_map
+local array_memo = {}
+
 ---@param self table
 ---@param value_type Type
----@return Array self
+---@return ArrayType self
 local function define_array(self, value_type)
 	if type(value_type) ~= "table" or type(value_type.value_check) ~= "function" then
 		error("trying to set the value type to something that isn't a type (possible typo?)")
 	end
+
+	if array_memo[value_type] then
+		return array_memo[value_type]
+	else
+		array_memo[value_type] = self
+	end
+
 	setmetatable(self, array_type_mt)
-	self.value_type = value_type
-	self.__index, self.__newindex = gen_array_fns(value_type)
-	self.__ipairs = array_methods.ipairs
-	self.__len = array_methods.len
-	self.__tostring = self:__index("pretty_print")
-	self.__eq = array_methods.eq
-	prettyprintable:implement_on(self, {
-		print = array_prettyprintable,
-	})
+	---@cast self ArrayType
 	-- NOTE: this isn't primitive equality; this type has a __eq metamethod!
 	self.value_check = metatable_equality(self)
-	---@cast self Array
+	self.value_type = value_type
+	self.methods = gen_array_methods(self, value_type)
+	self.__eq = array_eq_fn
+	self.__index, self.__newindex = gen_array_index_fns(self, value_type)
+	self.__ipairs = self.methods.ipairs
+	self.__len = self.methods.len
+	self.__tostring = self.methods.pretty_print
+	traits.pretty_print:implement_on(self, {
+		pretty_print = array_pretty_print,
+		default_print = array_pretty_print,
+	})
+	traits.diff:implement_on(self, {
+		diff = gen_array_diff_fn(self, value_type),
+	})
+	traits.value_name:implement_on(self, {
+		value_name = function()
+			-- TODO: augment this with generics
+			return "ArrayValue"
+		end,
+	})
 	return self
 end
+
+---@class UndefinedType: Type
+---@field define_record fun(self: table, kind: string, params_with_types: ParamsWithTypes): RecordType
+---@field define_enum fun(self: table, name: string, variants: Variants): EnumType
+---@field define_foreign fun(self: table, value_check: ValueCheckFn, lsp_type: string): ForeignType
+---@field define_map fun(self: table, key_type: Type, value_type: Type): MapType
+---@field define_set fun(self: table, key_type: Type): SetType
+---@field define_array fun(self: table, value_type: Type): ArrayType
 
 local type_mt = {
 	__index = {
@@ -459,21 +897,15 @@ local type_mt = {
 		define_enum = define_enum,
 		define_foreign = define_foreign,
 		define_map = define_map,
+		define_set = define_set,
 		define_array = define_array,
 	},
 }
 
 ---@type ValueCheckFn
-local function undefined_value_check(val)
+local function undefined_value_check(_)
 	error("trying to typecheck a value against a type that has been declared but not defined")
 end
-
----@class UndefinedType: Type
----@field define_record fun(self: table, kind: string, params_with_types: ParamsWithTypes): Record
----@field define_enum fun(self: table, name: string, variants: Variants): Enum
----@field define_foreign fun(self: table, value_check: ValueCheckFn): Foreign
----@field define_map fun(self: table, key_type: Type, value_type: Type): Map
----@field define_array fun(self: table, value_type: Type): Array
 
 ---@param self table
 ---@return UndefinedType self
@@ -485,24 +917,26 @@ local function define_type(self)
 end
 
 ---@param typename string
----@return Foreign
+---@return ForeignType
 local function gen_builtin(typename)
 	return define_foreign({}, function(val)
 		return type(val) == typename
-	end)
+	end, typename)
 end
 
 local terms_gen = {
-	---@type fun(kind: string, params_with_types: ParamsWithTypes): Record
+	---@type fun(kind: string, params_with_types: ParamsWithTypes): RecordType
 	declare_record = new_self(define_record),
-	---@type fun(name: string, variants: Variants): Enum
+	---@type fun(name: string, variants: Variants): EnumType
 	declare_enum = new_self(define_enum),
 	-- Make sure the function you pass to this returns true, not just a truthy value
-	---@type fun(value_check: ValueCheckFn): Foreign
+	---@type fun(value_check: ValueCheckFn, lsp_type: string): ForeignType
 	declare_foreign = new_self(define_foreign),
-	---@type fun(key_type: Type, value_type: Type): Map
+	---@type fun(key_type: Type, value_type: Type): MapType
 	declare_map = new_self(define_map),
-	---@type fun(value_type: Type): Array
+	---@type fun(key_type: Type): SetType
+	declare_set = new_self(define_set),
+	---@type fun(value_type: Type): ArrayType
 	declare_array = new_self(define_array),
 	---@type fun(): UndefinedType
 	declare_type = new_self(define_type),
@@ -510,16 +944,11 @@ local terms_gen = {
 	builtin_number = gen_builtin("number"),
 	builtin_string = gen_builtin("string"),
 	builtin_function = gen_builtin("function"),
-	anchor_type = define_foreign({}, function(o)
-		if o and o.sourceid then
-			return true
-		end
-		return false
-	end),
+	builtin_table = gen_builtin("table"),
 	any_lua_type = define_foreign({}, function()
 		return true
-	end),
+	end, "any"),
 }
-local internals_interface = require "./internals-interface"
+local internals_interface = require "internals-interface"
 internals_interface.terms_gen = terms_gen
 return terms_gen

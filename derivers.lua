@@ -1,12 +1,52 @@
----@alias RecordDeriveInfo { kind: string, params: string[], params_types: Type[] }
----@alias UnitDeriveInfo { kind: string }
----@alias EnumDeriveInfo { name: string, variants: { [number]: string, [string]: { type: string, info: RecordDeriveInfo | UnitDeriveInfo } } }
+local traits = require "traits"
+local pretty_printer = require "pretty-printer"
 
 ---@class (exact) Deriver
----@field record fun(t: Record, info: RecordDeriveInfo)
----@field enum fun(t: Enum, info: EnumDeriveInfo)
+---@field record fun(t: RecordType, info: RecordDeriveInfo, override_pretty: fun(RecordType, PrettyPrint, ...), ...)
+---@field enum fun(t: EnumType, info: EnumDeriveInfo, override_pretty: { [string]: fun(EnumType, PrettyPrint, ...) }, ...)
 
-local derive_print = function(...) end -- can make this call derive_print(...) if you want to debug
+---@class (exact) RecordDeriveInfo
+---@field kind string
+---@field params string[]
+---@field params_types Type[]
+
+---@class (exact) UnitDeriveInfo
+---@field kind string
+
+---@class EnumDeriveInfoVariantKindContainer
+local EnumDeriveInfoVariantKind = --[[@enum EnumDeriveInfoVariantKind]]
+	{
+		Record = "Record",
+		Unit = "Unit",
+	}
+
+---@class (exact) EnumDeriveInfoVariant
+---@field type EnumDeriveInfoVariantKind
+---@field info RecordDeriveInfo | UnitDeriveInfo
+
+---@class (exact) EnumDeriveInfo
+---@field name string
+---@field variants { [integer]: string, [string]: EnumDeriveInfoVariant }
+
+local derive_print = function(...) end -- can make this call print(...) if you want to debug
+
+local memo_meta = { __mode = "k" }
+local function make_memo_table()
+	return setmetatable({}, memo_meta)
+end
+local eq_memoizer = { memo = make_memo_table() }
+function eq_memoizer:check(a, b)
+	local memoa = self.memo[a]
+	if memoa then
+		return memoa[b]
+	end
+end
+function eq_memoizer:set(a, b)
+	if not self.memo[a] then
+		self.memo[a] = make_memo_table()
+	end
+	self.memo[a][b] = true
+end
 
 ---@type Deriver
 local eq = {
@@ -19,7 +59,23 @@ local eq = {
 			checks[i] = string.format("left[%q] == right[%q]", param, param)
 		end
 		local all_checks = table.concat(checks, " and ")
-		local chunk = "return function(left, right) return " .. all_checks .. " end"
+
+		local chunk = [[
+local eq_memoizer = ...
+return function(left, right)
+	if getmetatable(left) ~= getmetatable(right) then
+		return false
+	end
+	if eq_memoizer:check(left, right) then
+		return true
+	end
+	if %s then
+		eq_memoizer:set(left, right)
+		return true
+	end
+	return false
+end]]
+		chunk = chunk:format(all_checks)
 
 		derive_print("derive eq: record chunk: " .. kind)
 		derive_print("###")
@@ -28,7 +84,7 @@ local eq = {
 
 		local compiled, message = load(chunk, "derive-eq_record", "t")
 		assert(compiled, message)
-		local eq_fn = compiled()
+		local eq_fn = compiled(eq_memoizer)
 		t.__eq = eq_fn
 	end,
 	enum = function(t, info)
@@ -42,28 +98,41 @@ local eq = {
 			local vtype = vdata.type
 			local vinfo = vdata.info
 			local all_checks
-			if vtype == "record" then
+			if vtype == EnumDeriveInfoVariantKind.Record then
+				local vparams = vinfo.params
 				local checks = {}
-				for i, param in ipairs(vinfo.params) do
+				for i, param in ipairs(vparams) do
 					checks[i] = string.format("left[%q] == right[%q]", param, param)
 				end
 				all_checks = table.concat(checks, " and ")
-			elseif vtype == "unit" then
+			elseif vtype == EnumDeriveInfoVariantKind.Unit then
 				all_checks = "true"
 			else
 				error("unknown variant type: " .. vtype)
 			end
-			local entry = string.format("[%q] = function(left, right) return %s end", vkind, all_checks)
-			variants_checks[n] = entry
+			variants_checks[n] = string.format("[%q] = function(left, right) return %s end", vkind, all_checks)
 		end
-		local all_variants_checks = "{\n  " .. table.concat(variants_checks, ",\n  ") .. "\n}"
-		local define_all_variants_checks = "local all_variants_checks = " .. all_variants_checks
+		local all_variants_checks = "	" .. table.concat(variants_checks, ",\n	") .. "\n"
 
-		local kind_check_expression = "left.kind == right.kind"
-		local variant_check_expression = "all_variants_checks[left.kind](left, right)"
-		local check_expression = kind_check_expression .. " and " .. variant_check_expression
-		local check_function = "function(left, right) return " .. check_expression .. " end"
-		local chunk = define_all_variants_checks .. "\nreturn " .. check_function
+		local chunk = [[
+local eq_memoizer = ...
+local all_variants_checks = {
+%s
+}
+return function(left, right)
+	if getmetatable(left) ~= getmetatable(right) then
+		return false
+	end
+	if eq_memoizer:check(left, right) then
+		return true
+	end
+	if left.kind == right.kind and all_variants_checks[left.kind](left, right) then
+		eq_memoizer:set(left, right)
+		return true
+	end
+	return false
+end]]
+		chunk = chunk:format(all_variants_checks)
 
 		derive_print("derive eq: enum chunk: " .. name)
 		derive_print("###")
@@ -72,20 +141,23 @@ local eq = {
 
 		local compiled, message = load(chunk, "derive-eq_enum", "t")
 		assert(compiled, message)
-		local eq_fn = compiled()
+		local eq_fn = compiled(eq_memoizer)
 		t.__eq = eq_fn
 	end,
 }
 
 ---@type Deriver
 local is = {
+	record = function()
+		error("can't derive :is() for a record type")
+	end,
 	enum = function(t, info)
 		local idx = t.__index or {}
 		t.__index = idx
 		local name = info.name
 		local variants = info.variants
 
-		for n, vname in ipairs(variants) do
+		for _, vname in ipairs(variants) do
 			local vkind = name .. "." .. vname
 			local chunk = string.format("return function(self) return self.kind == %q end", vkind)
 
@@ -97,112 +169,6 @@ local is = {
 			local compiled, message = load(chunk, "derive-is_enum", "t")
 			assert(compiled, message)
 			idx["is_" .. vname] = compiled()
-		end
-	end,
-	record = function(t, info) end,
-}
-
-local function record_prettyprintable_trait(info)
-	local kind = info.kind
-	local params = info.params
-
-	local all_fields = {}
-	for _, param in ipairs(params) do
-		all_fields[#all_fields + 1] = string.format("{ %q, self[%q] },", param, param)
-	end
-	local chunk = string.format(
-		[[
-return function(self, pp)
-	pp:record(%q, {
-		%s
-	})
-end
-]],
-		info.kind,
-		table.concat(all_fields, "\n\t\t")
-	)
-
-	local compiled, message = load(chunk, "derive-prettyprintable_trait", "t")
-	if not compiled then
-		print(chunk)
-	end
-	assert(compiled, message)
-	return compiled()
-end
-
----@type Deriver
-local pretty_print = {
-	record = function(t, info)
-		local idx = t.__index or {}
-		t.__index = idx
-		local prettyprintable = require("./pretty-printer").prettyprintable
-		local prettyprintable_print = record_prettyprintable_trait(info)
-		prettyprintable:implement_on(t, { print = prettyprintable_print })
-		idx["pretty_print"] = function(self)
-			local pp = require("./pretty-printer").PrettyPrint.new()
-			prettyprintable_print(self, pp)
-			return tostring(pp)
-		end
-
-		if not t["__tostring"] then
-			t["__tostring"] = idx["pretty_print"]
-		end
-		if not t["__tostring"] then
-			t["__tostring"] = idx["pretty_print"]
-		end
-	end,
-	enum = function(t, info)
-		local idx = t.__index or {}
-		t.__index = idx
-		local name = info.name
-		local variants = info.variants
-
-		local variant_printers = {}
-		for n, vname in ipairs(variants) do
-			local vkind = name .. "." .. vname
-			local vdata = variants[vname]
-			local vtype = vdata.type
-			local vinfo = vdata.info
-			if vtype == "record" then
-				variant_printers[vkind] = record_prettyprintable_trait(vinfo)
-			elseif vtype == "unit" then
-				variant_printers[vkind] = function(self, printer)
-					return printer:unit(self.kind)
-				end
-			else
-				error("unknown variant type: " .. vtype)
-			end
-		end
-
-		local chunk = [[
-      local variant_printers = ...
-      return function(self, prefix)
-		if not variant_printers[self.kind] then
-			error("missing variant_printer for" .. self.kind)
-		end
-        return variant_printers[self.kind](self, prefix)
-      end
-    ]]
-
-		derive_print("derive pretty_print: enum chunk: " .. name)
-		derive_print("###")
-		derive_print(chunk)
-		derive_print("###")
-
-		local compiled, message = load(chunk, "derive-pretty_print_enum", "t")
-		assert(compiled, message)
-		local prettyprintable_print = compiled(variant_printers)
-
-		local prettyprintable = require("./pretty-printer").prettyprintable
-		prettyprintable:implement_on(t, { print = prettyprintable_print })
-		idx["pretty_print"] = function(self)
-			local pp = require("./pretty-printer").PrettyPrint.new()
-			prettyprintable_print(self, pp)
-			return tostring(pp)
-		end
-
-		if not t["__tostring"] then
-			t["__tostring"] = idx["pretty_print"]
 		end
 	end,
 }
@@ -220,7 +186,8 @@ local unwrap = {
 			returns[i] = string.format("self[%q]", param)
 		end
 		local all_returns = table.concat(returns, ", ")
-		local chunk = "return function(self) return " .. all_returns .. " end"
+
+		local chunk = string.format("return function(self) return %s end", all_returns)
 
 		derive_print("derive unwrap: record chunk: " .. kind)
 		derive_print("###")
@@ -232,37 +199,39 @@ local unwrap = {
 		idx["unwrap_" .. kind] = compiled()
 	end,
 	enum = function(t, info)
-		t:derive(is)
-		local idx = t.__index
+		local idx = t.__index or {}
+		t.__index = idx
 		local name = info.name
 		local variants = info.variants
 
-		for n, vname in ipairs(variants) do
+		for _, vname in ipairs(variants) do
 			local vkind = name .. "." .. vname
 			local vdata = variants[vname]
 			local vtype = vdata.type
 			local vinfo = vdata.info
 			local all_returns
-			if vtype == "record" then
+			if vtype == EnumDeriveInfoVariantKind.Record then
+				local vparams = vinfo.params
 				local returns = {}
-				for i, param in ipairs(vinfo.params) do
+				for i, param in ipairs(vparams) do
 					returns[i] = string.format("self[%q]", param)
 				end
 				all_returns = table.concat(returns, ", ")
-			elseif vtype == "unit" then
+			elseif vtype == EnumDeriveInfoVariantKind.Unit then
 				all_returns = ""
 			else
 				error("unknown variant type: " .. vtype)
 			end
-			local error_message = "unwrap failed: unwrapping for a " .. vkind .. " but found a "
-			local error_statement = string.format("error(%q .. self.kind)", error_message)
-			local chunk = "return function(self) if self:is_"
-				.. vname
-				.. "() then return "
-				.. all_returns
-				.. " else "
-				.. error_statement
-				.. " end end"
+
+			local chunk = [[
+return function(self)
+	if self.kind == %q then
+		return %s
+	else
+		error("unwrap failed: unwrapping for a %s but found a " .. self.kind)
+	end
+end]]
+			chunk = chunk:format(vkind, all_returns, vkind)
 
 			derive_print("derive unwrap: enum chunk: " .. vkind)
 			derive_print("###")
@@ -278,15 +247,43 @@ local unwrap = {
 
 ---@type Deriver
 local as = {
+	record = function()
+		error("can't derive :as() for a record type")
+	end,
 	enum = function(t, info)
-		t:derive(unwrap)
-		local idx = t.__index
+		local idx = t.__index or {}
+		t.__index = idx
 		local name = info.name
 		local variants = info.variants
 
-		for n, vname in ipairs(variants) do
+		for _, vname in ipairs(variants) do
 			local vkind = name .. "." .. vname
-			local chunk = "return function(self) return pcall(function() return self:unwrap_" .. vname .. "() end) end"
+			local vdata = variants[vname]
+			local vtype = vdata.type
+			local vinfo = vdata.info
+			local all_returns
+			if vtype == EnumDeriveInfoVariantKind.Record then
+				local vparams = vinfo.params
+				local returns = { "true" }
+				for i, param in ipairs(vparams) do
+					returns[i + 1] = string.format("self[%q]", param)
+				end
+				all_returns = table.concat(returns, ", ")
+			elseif vtype == EnumDeriveInfoVariantKind.Unit then
+				all_returns = "true"
+			else
+				error("unknown variant type: " .. vtype)
+			end
+
+			local chunk = [[
+return function(self)
+	if self.kind == %q then
+		return %s
+	else
+		return false
+	end
+end]]
+			chunk = chunk:format(vkind, all_returns)
 
 			derive_print("derive as: enum chunk: " .. vkind)
 			derive_print("###")
@@ -298,7 +295,243 @@ local as = {
 			idx["as_" .. vname] = compiled()
 		end
 	end,
-	record = function(t, info) end,
+}
+
+---@param info RecordDeriveInfo
+---@return fun(self: Type, pp: PrettyPrint, ...)
+local function record_pretty_printable_trait(info)
+	local kind = info.kind
+	local params = info.params
+
+	local fields = {}
+	for i, param in ipairs(params) do
+		fields[i] = string.format("{ %q, self[%q] }", param, param)
+	end
+	local all_fields = "		" .. table.concat(fields, ",\n		") .. "\n"
+
+	local chunk = [[
+return function(self, pp, ...)
+	pp:record(%q, {
+%s
+	}, ...)
+end]]
+	chunk = chunk:format(kind, all_fields)
+
+	derive_print("derive pretty_printable_trait chunk: " .. kind)
+	derive_print("###")
+	derive_print(chunk)
+	derive_print("###")
+
+	local compiled, message = load(chunk, "derive-pretty_printable_trait", "t")
+	if not compiled then
+		print(chunk)
+	end
+	assert(compiled, message)
+	return compiled()
+end
+
+---@type Deriver
+local pretty_print = {
+	record = function(t, info, override_pretty)
+		local pretty_printable_print = record_pretty_printable_trait(info)
+		local pretty_print = override_pretty or pretty_printable_print
+		local default_print = pretty_printable_print
+
+		traits.pretty_print:implement_on(t, { pretty_print = pretty_print, default_print = default_print })
+
+		-- must be added here, instead of earlier in terms-gen, otherwise a type that doesn't derive
+		-- pretty_print will cause pretty_print to call __tostring and loop until stack overflow
+		t.__tostring = pretty_printer.pretty_print
+	end,
+	enum = function(t, info, override_pretty)
+		local name = info.name
+		local variants = info.variants
+
+		local variant_pretty_printers = {}
+		local variant_default_printers = {}
+		for _, vname in ipairs(variants) do
+			local vkind = name .. "." .. vname
+			local vdata = variants[vname]
+			local vtype = vdata.type
+			local vinfo = vdata.info
+			local override_pretty_v = override_pretty and override_pretty[vname]
+			local variant_pretty_printable_print
+			if vtype == EnumDeriveInfoVariantKind.Record then
+				---@cast vinfo RecordDeriveInfo
+				variant_pretty_printable_print = record_pretty_printable_trait(vinfo)
+			elseif vtype == EnumDeriveInfoVariantKind.Unit then
+				variant_pretty_printable_print = function(self, pp)
+					pp:unit(self.kind)
+				end
+			else
+				error("unknown variant type: " .. vtype)
+			end
+			variant_pretty_printers[vkind] = override_pretty_v or variant_pretty_printable_print
+			variant_default_printers[vkind] = variant_pretty_printable_print
+		end
+
+		local function pretty_print(self, pp, ...)
+			return variant_pretty_printers[self.kind](self, pp, ...)
+		end
+		local function default_print(self, pp, ...)
+			return variant_default_printers[self.kind](self, pp, ...)
+		end
+
+		traits.pretty_print:implement_on(t, { pretty_print = pretty_print, default_print = default_print })
+
+		-- must be added here, instead of earlier in terms-gen, otherwise a type that
+		-- doesn't derive pretty_print will cause pretty_print to loop __tostring forever
+		t.__tostring = pretty_printer.pretty_print
+	end,
+}
+
+---@type Deriver
+local diff = {
+	record = function(t, info)
+		local params = info.params
+		local params_types = info.params_types
+
+		local function diff_fn(left, right)
+			print("diffing...")
+			print("kind: " .. left.kind)
+			local rt = getmetatable(right)
+			if t ~= rt then
+				print("unequal types!")
+				print(t)
+				print(rt)
+				print("stopping diff")
+				return
+			end
+			if left.kind ~= right.kind then
+				print("unequal kinds!")
+				print(left.kind)
+				print(right.kind)
+				print("stopping diff")
+				return
+			end
+			local n = 0
+			local diff_params = {}
+			local diff_params_types = {}
+			for i, param in ipairs(params) do
+				if left[param] ~= right[param] then
+					n = n + 1
+					diff_params[n] = param
+					diff_params_types[n] = param_types[i]
+				end
+			end
+			if n == 0 then
+				print("no difference")
+				print("stopping diff")
+				return
+			elseif n == 1 then
+				local d = diff_params[1]
+				local dt = diff_params_types[1]
+				print("difference in param: " .. d)
+				local diff_impl = traits.diff:get(dt)
+				if diff_impl then
+					-- tail call
+					return diff_impl.diff(left[d], right[d])
+				else
+					print("stopping diff (missing diff impl)")
+					return
+				end
+			else
+				print("difference in multiple params:")
+				for i = 1, n do
+					print(diff_params[i])
+				end
+				print("stopping diff")
+				return
+			end
+		end
+
+		traits.diff:implement_on(t, { diff = diff_fn })
+	end,
+	enum = function(t, info)
+		local name = info.name
+		local variants = info.variants
+
+		local variants_checks = {}
+		for _, vname in ipairs(variants) do
+			local vkind = name .. "." .. vname
+			local vdata = variants[vname]
+			local vtype = vdata.type
+			local vinfo = vdata.info
+			local vcheck
+			if vtype == EnumDeriveInfoVariantKind.Record then
+				---@cast vinfo RecordDeriveInfo
+				function vcheck(left, right)
+					local vparams = vinfo.params
+					local vparams_types = vinfo.params_types
+					local n = 0
+					local diff_params = {}
+					local diff_params_types = {}
+					for i, param in ipairs(vparams) do
+						if left[param] ~= right[param] then
+							n = n + 1
+							diff_params[n] = param
+							diff_params_types[n] = vparams_types[i]
+						end
+					end
+					if n == 0 then
+						print("no difference")
+						print("stopping diff")
+						return
+					elseif n == 1 then
+						local d = diff_params[1]
+						local dt = diff_params_types[1]
+						print("difference in param: " .. d)
+						local diff_impl = traits.diff:get(dt)
+						if diff_impl then
+							-- tail call
+							return diff_impl.diff(left[d], right[d])
+						else
+							print("stopping diff (missing diff impl)")
+							return
+						end
+					else
+						print("difference in multiple params:")
+						for i = 1, n do
+							print(diff_params[i])
+						end
+						print("stopping diff")
+						return
+					end
+				end
+			elseif vtype == EnumDeriveInfoVariantKind.Unit then
+				function vcheck()
+					print("no difference")
+					print("stopping diff")
+				end
+			else
+				error("unknown variant type: " .. vtype)
+			end
+			variants_checks[vkind] = vcheck
+		end
+
+		local function diff_fn(left, right)
+			print("diffing...")
+			print("kind: " .. left.kind)
+			local rt = getmetatable(right)
+			if t ~= rt then
+				print("unequal types!")
+				print(t)
+				print(rt)
+				print("stopping diff")
+				return
+			end
+			if left.kind ~= right.kind then
+				print("unequal kinds!")
+				print(left.kind)
+				print(right.kind)
+				print("stopping diff")
+				return
+			end
+			variants_checks[left.kind](left, right)
+		end
+
+		traits.diff:implement_on(t, { diff = diff_fn })
+	end,
 }
 
 -- build_record_function = (trait, info) -> function that implements the trait method
@@ -316,16 +549,16 @@ local function trait_method(trait, method, build_record_function, specialization
 			local variants = info.variants
 
 			local variant_impls = {}
-			for n, vname in ipairs(variants) do
+			for _, vname in ipairs(variants) do
 				local vkind = name .. "." .. vname
 				local vdata = variants[vname]
 				local vtype = vdata.type
 				local vinfo = vdata.info
 				if specializations[vname] then
 					variant_impls[vkind] = specializations[vname]
-				elseif vtype == "record" then
+				elseif vtype == EnumDeriveInfoVariantKind.Record then
 					variant_impls[vkind] = build_record_function(trait, t, vinfo)
-				elseif vtype == "unit" then
+				elseif vtype == EnumDeriveInfoVariantKind.Unit then
 					variant_impls[vkind] = function(self, other)
 						return self == other
 					end
@@ -335,13 +568,17 @@ local function trait_method(trait, method, build_record_function, specialization
 			end
 
 			local chunk = [[
-				local variant_impls = ...
-				return function(self, other)
-					return variant_impls[self.kind](self, other)
-				end
-			]]
+local variant_impls = ...
+return function(self, other)
+	return variant_impls[self.kind](self, other)
+end]]
 
-			local compiled, message = load(chunk, "derive-pretty_print_enum", "t")
+			derive_print("derive trait_method: enum chunk: " .. name)
+			derive_print("###")
+			derive_print(chunk)
+			derive_print("###")
+
+			local compiled, message = load(chunk, "derive-trait_method_enum", "t")
 			assert(compiled, message)
 			trait:implement_on(t, {
 				[method] = compiled(variant_impls),
@@ -356,10 +593,12 @@ end
 -- p(terms.inferrable_term == getmetatable(typed))
 
 return {
+	EnumDeriveInfoVariantKind = EnumDeriveInfoVariantKind,
 	eq = eq,
 	is = is,
 	unwrap = unwrap,
 	as = as,
 	pretty_print = pretty_print,
+	diff = diff,
 	trait_method = trait_method,
 }
