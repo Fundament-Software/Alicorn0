@@ -82,6 +82,30 @@ function neutral_value:is_host_unwrap_stuck() end
 function neutral_value:unwrap_host_unwrap_stuck() end
 ---@return boolean, neutral_value
 function neutral_value:as_host_unwrap_stuck() end
+---@return boolean
+function neutral_value:is_checkable_hole() end
+---@return value
+function neutral_value:unwrap_checkable_hole() end
+---@return boolean, value
+function neutral_value:as_checkable_hole() end
+---@return boolean
+function neutral_value:is_checkable_filled_hole() end
+---@return value, value, value
+function neutral_value:unwrap_checkable_filled_hole() end
+---@return boolean, value, value, value
+function neutral_value:as_checkable_filled_hole() end
+---@return boolean
+function neutral_value:is_inferrable_hole() end
+---@return nil
+function neutral_value:unwrap_inferrable_hole() end
+---@return boolean
+function neutral_value:as_inferrable_hole() end
+---@return boolean
+function neutral_value:is_inferrable_filled_hole() end
+---@return value, value
+function neutral_value:unwrap_inferrable_filled_hole() end
+---@return boolean, value, value
+function neutral_value:as_inferrable_filled_hole() end
 
 ---@class (exact) neutral_valueType: EnumType
 ---@field define_enum fun(self: neutral_valueType, name: string, variants: Variants): neutral_valueType
@@ -98,4 +122,8 @@ function neutral_value:as_host_unwrap_stuck() end
 ---@field host_intrinsic_stuck fun(source: neutral_value, anchor: Anchor): neutral_value
 ---@field host_wrap_stuck fun(content: neutral_value): neutral_value
 ---@field host_unwrap_stuck fun(container: neutral_value): neutral_value
+---@field checkable_hole fun(goal_type: value): neutral_value
+---@field checkable_filled_hole fun(inner_type: value, inner_val: value, goal_type: value): neutral_value
+---@field inferrable_hole neutral_value
+---@field inferrable_filled_hole fun(inner_type: value, inner_val: value): neutral_value
 return {}

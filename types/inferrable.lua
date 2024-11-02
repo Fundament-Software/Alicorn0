@@ -244,6 +244,18 @@ function inferrable:is_program_type() end
 function inferrable:unwrap_program_type() end
 ---@return boolean, inferrable, inferrable
 function inferrable:as_program_type() end
+---@return boolean
+function inferrable:is_hole() end
+---@return nil
+function inferrable:unwrap_hole() end
+---@return boolean
+function inferrable:as_hole() end
+---@return boolean
+function inferrable:is_filled_hole() end
+---@return inferrable
+function inferrable:unwrap_filled_hole() end
+---@return boolean, inferrable
+function inferrable:as_filled_hole() end
 
 ---@class (exact) inferrableType: EnumType
 ---@field define_enum fun(self: inferrableType, name: string, variants: Variants): inferrableType
@@ -287,4 +299,6 @@ function inferrable:as_program_type() end
 ---@field program_sequence fun(first: inferrable, anchor: Anchor, continue: inferrable): inferrable
 ---@field program_end fun(result: inferrable): inferrable
 ---@field program_type fun(effect_type: inferrable, result_type: inferrable): inferrable
+---@field hole inferrable
+---@field filled_hole fun(inner: inferrable): inferrable
 return {}

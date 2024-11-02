@@ -358,6 +358,30 @@ function typed:is_constrained_type() end
 function typed:unwrap_constrained_type() end
 ---@return boolean, ArrayValue
 function typed:as_constrained_type() end
+---@return boolean
+function typed:is_checkable_hole() end
+---@return value
+function typed:unwrap_checkable_hole() end
+---@return boolean, value
+function typed:as_checkable_hole() end
+---@return boolean
+function typed:is_checkable_filled_hole() end
+---@return value, typed, value
+function typed:unwrap_checkable_filled_hole() end
+---@return boolean, value, typed, value
+function typed:as_checkable_filled_hole() end
+---@return boolean
+function typed:is_inferrable_hole() end
+---@return nil
+function typed:unwrap_inferrable_hole() end
+---@return boolean
+function typed:as_inferrable_hole() end
+---@return boolean
+function typed:is_inferrable_filled_hole() end
+---@return value, typed
+function typed:unwrap_inferrable_filled_hole() end
+---@return boolean, value, typed
+function typed:as_inferrable_filled_hole() end
 
 ---@class (exact) typedType: EnumType
 ---@field define_enum fun(self: typedType, name: string, variants: Variants): typedType
@@ -420,4 +444,8 @@ function typed:as_constrained_type() end
 ---@field intersection_type fun(left: typed, right: typed): typed
 ---@field union_type fun(left: typed, right: typed): typed
 ---@field constrained_type fun(constraints: ArrayValue): typed
+---@field checkable_hole fun(goal_type: value): typed
+---@field checkable_filled_hole fun(inner_type: value, inner_term: typed, goal_type: value): typed
+---@field inferrable_hole typed
+---@field inferrable_filled_hole fun(inner_type: value, inner_term: typed): typed
 return {}

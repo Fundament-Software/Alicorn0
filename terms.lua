@@ -276,6 +276,8 @@ checkable_term:define_enum("checkable", {
 		"param_name", gen.builtin_string,
 		"body",       checkable_term,
 	} },
+	{ "hole" },
+	{ "filled_hole", { "inner", inferrable_term } }, -- TODO: really inferrable? or checkable?
 })
 -- inferrable terms can have their type inferred / don't need a goal type
 -- stylua: ignore
@@ -405,6 +407,8 @@ inferrable_term:define_enum("inferrable", {
 		"effect_type", inferrable_term,
 		"result_type", inferrable_term,
 	} },
+	{ "hole" },
+	{ "filled_hole", { "inner", inferrable_term } },
 })
 
 ---@class SubtypeRelation
@@ -695,6 +699,17 @@ typed_term:define_enum("typed", {
 		"right", typed_term,
 	} },
 	{ "constrained_type", { "constraints", array(constraintelem) } },
+	{ "checkable_hole", { "goal_type", value } },
+	{ "checkable_filled_hole", {
+		"inner_type", value,
+		"inner_term", typed_term,
+		"goal_type",  value,
+	} },
+	{ "inferrable_hole" },
+	{ "inferrable_filled_hole", {
+		"inner_type", value,
+		"inner_term", typed_term,
+	} },
 }) 
 
 -- stylua: ignore
@@ -938,6 +953,7 @@ value:define_enum("value", {
 		"left",  value,
 		"right", value,
 	} },
+	{ "hole_type" },
 })
 
 -- stylua: ignore
@@ -989,6 +1005,17 @@ neutral_value:define_enum("neutral_value", {
 	} },
 	{ "host_wrap_stuck", { "content", neutral_value } },
 	{ "host_unwrap_stuck", { "container", neutral_value } },
+	{ "checkable_hole", { "goal_type", value } },
+	{ "checkable_filled_hole", {
+		"inner_type", value,
+		"inner_val",  value,
+		"goal_type",  value,
+	} },
+	{ "inferrable_hole" },
+	{ "inferrable_filled_hole", {
+		"inner_type", value,
+		"inner_val",  value,
+	} },
 })
 
 local host_syntax_type = value.host_user_defined_type({ name = "syntax" }, array(value)())
