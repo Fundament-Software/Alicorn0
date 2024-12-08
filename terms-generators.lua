@@ -1,6 +1,7 @@
 local derivers = require "derivers"
 local pretty_printer = require "pretty-printer"
 local traits = require "traits"
+local U = require "alicorn-utils"
 
 -- record and enum are nominative types.
 -- this means that two record types, given the same arguments, are distinct.
@@ -119,29 +120,57 @@ end
 local function gen_record(self, cons, kind, params_with_types)
 	local params, params_types = parse_params_with_types(params_with_types)
 	validate_params_types(kind, params, params_types)
+	local function build_record(...)
+		local args = { ... }
+		local val = {
+			kind = kind,
+		}
+		for i, v in ipairs(params) do
+			local argi = args[i]
+			-- type-check constructor arguments
+			if params_types[i].value_check(argi) ~= true then
+				print("value of parameter " .. v .. ": (follows)")
+				p(argi)
+				print("expected type of parameter " .. v .. " is :", params_types[i])
+				error("wrong argument type passed to constructor " .. kind .. ", parameter '" .. v .. "'")
+			end
+			val[v] = argi
+		end
+		setmetatable(val, self)
+		return val
+	end
+	build_record = U.memoize(build_record)
+	-- freeze args before entering memoized function
+	-- because freeze may produce a hash-consed instance of the given arg
+	-- which allows hash-consing to work with arrays etc
+	local function build_record_freeze_wrapper(...)
+		local args = { ... }
+		for i, v in ipairs(params) do
+			local argi = args[i]
+			local freeze_impl = traits.freeze:get(params_types[i])
+			if freeze_impl then
+				argi = freeze_impl.freeze(params_types[i], argi)
+			else
+				print(
+					"WARNING: while constructing "
+						.. kind
+						.. ", can't freeze param "
+						.. v
+						.. " (type "
+						.. tostring(params_types[i])
+						.. ")"
+				)
+				print("this may lead to suboptimal hash-consing")
+			end
+			args[i] = argi
+		end
+		-- adjust args to correct number so memoize works even given too many args
+		-- (build_record won't error with too many args)
+		return build_record(table.unpack(args, 1, #params))
+	end
 	setmetatable(cons, {
 		__call = function(_, ...)
-			local args = { ... }
-			local val = {
-				kind = kind,
-			}
-			for i, v in ipairs(params) do
-				local argi = args[i]
-				-- type-check constructor arguments
-				if params_types[i].value_check(argi) ~= true then
-					print("value of parameter " .. v .. ": (follows)")
-					p(argi)
-					print("expected type of parameter " .. v .. " is :", params_types[i])
-					--for i = 2, 25 do
-					--	local d = debug.getinfo(i, "Sln")
-					--	print(string.format("%s %s %s: %s:%d", d.what, d.namewhat, d.name, d.source, d.currentline))
-					--end
-					error("wrong argument type passed to constructor " .. kind .. ", parameter '" .. v .. "'")
-				end
-				val[v] = argi
-			end
-			setmetatable(val, self)
-			return val
+			return build_record_freeze_wrapper(...)
 		end,
 	})
 	---@type RecordDeriveInfo
@@ -182,6 +211,7 @@ local function define_record(self, kind, params_with_types)
 	self:derive(derivers.eq)
 	self:derive(derivers.unwrap)
 	self:derive(derivers.diff)
+	self:derive(derivers.freeze)
 	return self
 end
 
@@ -277,6 +307,7 @@ local function define_enum(self, name, variants)
 	self:derive(derivers.unwrap)
 	self:derive(derivers.as)
 	self:derive(derivers.diff)
+	self:derive(derivers.freeze)
 	return self
 end
 
@@ -316,6 +347,7 @@ end
 
 ---@class MapValue: Value
 ---@field _map { [Value]: Value }
+---@field is_frozen boolean
 ---@field set fun(MapValue, Value, Value)
 ---@field reset fun(MapValue, Value)
 ---@field get fun(MapValue, Value): Value?
@@ -326,11 +358,16 @@ end
 ---@field default_print fun(MapValue, ...)
 
 local map_type_mt = {
-	__call = function(self)
+	__call = function(self, ...)
 		local val = {
 			_map = {},
+			is_frozen = false, -- bypass __newindex when setting is_frozen = true
 		}
 		setmetatable(val, self)
+		local args = table.pack(...)
+		for i = 1, args.n, 2 do
+			val:set(args[i], args[i + 1])
+		end
 		return val
 	end,
 	__eq = function(left, right)
@@ -344,6 +381,9 @@ local map_type_mt = {
 local function gen_map_methods(self, key_type, value_type)
 	return {
 		set = function(val, key, value)
+			if val.is_frozen then
+				error("trying to modify a frozen map")
+			end
 			if key_type.value_check(key) ~= true then
 				p("map-set", key_type, value_type)
 				p(key)
@@ -354,9 +394,38 @@ local function gen_map_methods(self, key_type, value_type)
 				p(value)
 				error("wrong value type passed to map:set")
 			end
+			local freeze_impl_key = traits.freeze:get(key_type)
+			if freeze_impl_key then
+				key = freeze_impl_key.freeze(key_type, key)
+			else
+				print(
+					"WARNING: while setting "
+						.. tostring(self)
+						.. ", can't freeze key (type "
+						.. tostring(key_type)
+						.. ")"
+				)
+				print("this may lead to suboptimal hash-consing")
+			end
+			local freeze_impl_value = traits.freeze:get(value_type)
+			if freeze_impl_value then
+				value = freeze_impl_value.freeze(value_type, value)
+			else
+				print(
+					"WARNING: while setting "
+						.. tostring(self)
+						.. ", can't freeze value (type "
+						.. tostring(value_type)
+						.. ")"
+				)
+				print("this may lead to suboptimal hash-consing")
+			end
 			val._map[key] = value
 		end,
 		reset = function(val, key)
+			if val.is_frozen then
+				error("trying to modify a frozen map")
+			end
 			if key_type.value_check(key) ~= true then
 				p("map-reset", key_type, value_type)
 				p(key)
@@ -417,7 +486,40 @@ local function map_pretty_print(self, pp, ...)
 	return pp:table(self._map, ...)
 end
 
-local map_memo = {}
+local function map_freeze_helper_2(t, ...)
+	local frozenval = t(...)
+	frozenval.is_frozen = true
+	return frozenval
+end
+map_freeze_helper_2 = U.memoize(map_freeze_helper_2)
+
+local function map_freeze_helper(t, keys, map, ...)
+	if #keys > 0 then
+		local key = table.remove(keys)
+		local val = map[key]
+		return map_freeze_helper(t, keys, map, key, val, ...)
+	else
+		return map_freeze_helper_2(t, ...)
+	end
+end
+
+local function map_freeze(t, val)
+	if val.is_frozen then
+		return val
+	end
+	local order_impl = traits.order:get(t.key_type)
+	if not order_impl then
+		print("WARNING: can't freeze " .. tostring(t))
+		return val
+	end
+	local keys = {}
+	for k in pairs(val._map) do
+		keys[#keys + 1] = k
+	end
+	table.sort(keys, order_impl.compare)
+	local frozen = map_freeze_helper(t, keys, val._map)
+	return frozen
+end
 
 ---@param self table
 ---@param key_type Type
@@ -431,15 +533,6 @@ local function define_map(self, key_type, value_type)
 		or type(value_type.value_check) ~= "function"
 	then
 		error("trying to set the key or value type to something that isn't a type (possible typo?)")
-	end
-
-	if not map_memo[key_type] then
-		map_memo[key_type] = {}
-	end
-	if map_memo[key_type][value_type] then
-		return map_memo[key_type][value_type]
-	else
-		map_memo[key_type][value_type] = self
 	end
 
 	setmetatable(self, map_type_mt)
@@ -462,8 +555,10 @@ local function define_map(self, key_type, value_type)
 			return "MapValue"
 		end,
 	})
+	traits.freeze:implement_on(self, { freeze = map_freeze })
 	return self
 end
+define_map = U.memoize(define_map)
 
 ---@class SetType: Type
 ---@field key_type Type
@@ -473,6 +568,7 @@ end
 
 ---@class SetValue: Value
 ---@field _set { [Value]: boolean }
+---@field is_frozen boolean
 ---@field put fun(SetValue, Value)
 ---@field remove fun(SetValue, Value)
 ---@field test fun(SetValue, Value): boolean?
@@ -485,9 +581,11 @@ end
 ---@field default_print fun(SetValue, ...)
 
 local set_type_mt = {
+	-- FIXME: move put loop from freeze helper 2 to here after alicorn is fixed
 	__call = function(self)
 		local val = {
 			_set = {},
+			is_frozen = false,
 		}
 		setmetatable(val, self)
 		return val
@@ -503,14 +601,33 @@ local set_type_mt = {
 local function gen_set_methods(self, key_type)
 	return {
 		put = function(val, key)
+			if val.is_frozen then
+				error("trying to modify a frozen set")
+			end
 			if key_type.value_check(key) ~= true then
 				p("set-put", key_type)
 				p(key)
 				error("wrong key type passed to set:put")
 			end
+			local freeze_impl_key = traits.freeze:get(key_type)
+			if freeze_impl_key then
+				key = freeze_impl_key.freeze(key_type, key)
+			else
+				print(
+					"WARNING: while putting "
+						.. tostring(self)
+						.. ", can't freeze key (type "
+						.. tostring(key_type)
+						.. ")"
+				)
+				print("this may lead to suboptimal hash-consing")
+			end
 			val._set[key] = true
 		end,
 		remove = function(val, key)
+			if val.is_frozen then
+				error("trying to modify a frozen set")
+			end
 			if key_type.value_check(key) ~= true then
 				p("set-remove", key_type)
 				p(key)
@@ -584,7 +701,43 @@ local function set_pretty_print(self, pp, ...)
 	return pp:table(self._set, ...)
 end
 
-local set_memo = {}
+local function set_freeze_helper_2(t, ...)
+	local frozenval = t()
+	local args = table.pack(...)
+	for i = 1, args.n do
+		frozenval:put(args[i])
+	end
+	frozenval.is_frozen = true
+	return frozenval
+end
+set_freeze_helper_2 = U.memoize(set_freeze_helper_2)
+
+local function set_freeze_helper(t, keys, ...)
+	if #keys > 0 then
+		local key = table.remove(keys)
+		return set_freeze_helper(t, keys, key, ...)
+	else
+		return set_freeze_helper_2(t, ...)
+	end
+end
+
+local function set_freeze(t, val)
+	if val.is_frozen then
+		return val
+	end
+	local order_impl = traits.order:get(t.key_type)
+	if not order_impl then
+		print("WARNING: can't freeze " .. tostring(t))
+		return val
+	end
+	local keys = {}
+	for k in pairs(val._set) do
+		keys[#keys + 1] = k
+	end
+	table.sort(keys, order_impl.compare)
+	local frozen = set_freeze_helper(t, keys)
+	return frozen
+end
 
 ---@param self table
 ---@param key_type Type
@@ -592,12 +745,6 @@ local set_memo = {}
 local function define_set(self, key_type)
 	if type(key_type) ~= "table" or type(key_type.value_check) ~= "function" then
 		error("trying to set the key or value type to something that isn't a type (possible typo?)")
-	end
-
-	if set_memo[key_type] then
-		return set_memo[key_type]
-	else
-		set_memo[key_type] = self
 	end
 
 	setmetatable(self, set_type_mt)
@@ -618,8 +765,10 @@ local function define_set(self, key_type)
 			return "SetValue"
 		end,
 	})
+	traits.freeze:implement_on(self, { freeze = set_freeze })
 	return self
 end
+define_set = U.memoize(define_set)
 
 ---@class ArrayType: Type
 ---@field value_type Type
@@ -634,6 +783,7 @@ end
 ---@class ArrayValue: Value
 ---@field n integer
 ---@field array Value[]
+---@field is_frozen boolean
 ---@field ipairs fun(ArrayValue): function, ArrayValue, integer
 ---@field len fun(ArrayValue): integer
 ---@field append fun(ArrayValue, Value)
@@ -647,6 +797,7 @@ local array_type_mt = {
 		local val = {
 			n = 0,
 			array = {},
+			is_frozen = false,
 		}
 		setmetatable(val, self)
 		local args = table.pack(...)
@@ -672,14 +823,6 @@ local function array_next(state, control)
 	end
 end
 
-local function array_unpack(array, i, ...)
-	if i > 0 then
-		return array_unpack(array, i - 1, array[i], ...)
-	else
-		return ...
-	end
-end
-
 local function gen_array_methods(self, value_type)
 	return {
 		ipairs = function(val)
@@ -689,6 +832,9 @@ local function gen_array_methods(self, value_type)
 			return val.n
 		end,
 		append = function(val, value)
+			if val.is_frozen then
+				error("trying to modify a frozen array")
+			end
 			val[val.n + 1] = value
 		end,
 		copy = function(val, first, last)
@@ -701,7 +847,7 @@ local function gen_array_methods(self, value_type)
 			return new
 		end,
 		unpack = function(val)
-			return array_unpack(val.array, val.n)
+			return table.unpack(val.array, 1, val.n)
 		end,
 		pretty_print = pretty_printer.pretty_print,
 		default_print = pretty_printer.default_print,
@@ -723,9 +869,9 @@ local function array_eq_fn(left, right)
 	return true
 end
 
-local function gen_array_index_fns(t, value_type)
-	local function index(self, key)
-		local method = t.methods[key]
+local function gen_array_index_fns(self, value_type)
+	local function index(val, key)
+		local method = self.methods[key]
 		if method then
 			return method
 		end
@@ -743,18 +889,21 @@ local function gen_array_index_fns(t, value_type)
 		end
 		-- puc-rio lua 5.3 ipairs() always produces an iterator that looks for the first nil
 		-- instead of deferring to __ipairs metamethod like in 5.2
-		--if key == self.n + 1 then
+		--if key == val.n + 1 then
 		--	return nil
 		--end
 		-- above is commented out because it turns out we want nil-resistant iterators
 		-- so we should make sure to use the :ipairs() method instead
-		if key < 1 or key > self.n then
-			p(key, self.n)
+		if key < 1 or key > val.n then
+			p(key, val.n)
 			error("key passed to array indexing is out of bounds (read code comment above)")
 		end
-		return self.array[key]
+		return val.array[key]
 	end
-	local function newindex(self, key, value)
+	local function newindex(val, key, value)
+		if val.is_frozen then
+			error("trying to modify a frozen array")
+		end
 		if type(key) ~= "number" then
 			p("array-index", value_type)
 			p(key)
@@ -765,8 +914,8 @@ local function gen_array_index_fns(t, value_type)
 			error("key passed to array index-assignment is not an integer")
 		end
 		-- n+1 can be used to append
-		if key < 1 or key > self.n + 1 then
-			p(key, self.n)
+		if key < 1 or key > val.n + 1 then
+			p(key, val.n)
 			error("key passed to array index-assignment is out of bounds")
 		end
 		if value_type.value_check(value) ~= true then
@@ -774,9 +923,22 @@ local function gen_array_index_fns(t, value_type)
 			p(value)
 			error("wrong value type passed to array index-assignment")
 		end
-		self.array[key] = value
-		if key > self.n then
-			self.n = key
+		local freeze_impl_value = traits.freeze:get(value_type)
+		if freeze_impl_value then
+			value = freeze_impl_value.freeze(value_type, value)
+		else
+			print(
+				"WARNING: while setting "
+					.. tostring(self)
+					.. ", can't freeze value (type "
+					.. tostring(value_type)
+					.. ")"
+			)
+			print("this may lead to suboptimal hash-consing")
+		end
+		val.array[key] = value
+		if key > val.n then
+			val.n = key
 		end
 	end
 	return index, newindex
@@ -840,7 +1002,20 @@ local function gen_array_diff_fn(self, value_type)
 	return diff_fn
 end
 
-local array_memo = {}
+local function array_freeze_helper(t, ...)
+	local frozenval = t(...)
+	frozenval.is_frozen = true
+	return frozenval
+end
+array_freeze_helper = U.memoize(array_freeze_helper)
+
+local function array_freeze(t, val)
+	if val.is_frozen then
+		return val
+	end
+	local frozen = array_freeze_helper(t, val:unpack())
+	return frozen
+end
 
 ---@param self table
 ---@param value_type Type
@@ -848,12 +1023,6 @@ local array_memo = {}
 local function define_array(self, value_type)
 	if type(value_type) ~= "table" or type(value_type.value_check) ~= "function" then
 		error("trying to set the value type to something that isn't a type (possible typo?)")
-	end
-
-	if array_memo[value_type] then
-		return array_memo[value_type]
-	else
-		array_memo[value_type] = self
 	end
 
 	setmetatable(self, array_type_mt)
@@ -880,8 +1049,10 @@ local function define_array(self, value_type)
 			return "ArrayValue"
 		end,
 	})
+	traits.freeze:implement_on(self, { freeze = array_freeze })
 	return self
 end
+define_array = U.memoize(define_array)
 
 ---@class UndefinedType: Type
 ---@field define_record fun(self: table, kind: string, params_with_types: ParamsWithTypes): RecordType
@@ -949,6 +1120,27 @@ local terms_gen = {
 		return true
 	end, "any"),
 }
+
+-- lua numbers and strings are immutable
+-- additionally, strings are already interned by the interpreter
+local function freeze_trivial(t, val)
+	return val
+end
+-- lua numbers and strings are always comparable
+-- NOTE: strings are compared by locale collation
+--       so don't change locale during runtime
+local function compare_trivial(left, right)
+	return left < right
+end
+for _, t in ipairs { terms_gen.builtin_number, terms_gen.builtin_string } do
+	traits.freeze:implement_on(t, { freeze = freeze_trivial })
+	traits.order:implement_on(t, { compare = compare_trivial })
+end
+-- lua tables are often used as unique ids
+for _, t in ipairs { terms_gen.builtin_table, terms_gen.any_lua_type } do
+	traits.freeze:implement_on(t, { freeze = freeze_trivial })
+end
+
 local internals_interface = require "internals-interface"
 internals_interface.terms_gen = terms_gen
 return terms_gen
