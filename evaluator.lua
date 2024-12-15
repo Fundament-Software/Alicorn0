@@ -1358,6 +1358,13 @@ function check(
 		-- assert that goal_type is a pi type
 		-- TODO open says work on other things first they will be easier
 		error("nyi")
+	elseif checkable_term:is_hole() then
+		return usage_array(), typed_term.checkable_hole(goal_type)
+	elseif checkable_term:is_filled_hole() then
+		local inner = checkable_term:unwrap_filled_hole()
+		local inner_type, inner_usages, inner_term = infer(inner, typechecking_context)
+		-- intentionally discard usages
+		return usage_array(), typed_term.checkable_filled_hole(inner_type, inner_term, goal_type)
 	else
 		error("check: unknown kind: " .. checkable_term.kind)
 	end
@@ -2295,6 +2302,15 @@ function infer(
 		add_arrays(res_usages, result_type_usages)
 		-- TODO: use biunification constraints for start level
 		return value.star(0, 0), res_usages, typed_term.program_type(effect_type_term, result_type_term)
+	elseif inferrable_term:is_hole() then
+		-- TODO: value.neutral(neutral_value.free.metavariable(something)) instead of hole_type
+		return value.hole_type, usage_array(), typed_term.inferrable_hole
+	elseif inferrable_term:is_filled_hole() then
+		local inner = inferrable_term:unwrap_filled_hole()
+		local inner_type, inner_usages, inner_term = infer(inner, typechecking_context)
+		-- intentionally discard usages
+		-- TODO: value.neutral(neutral_value.free.metavariable(something)) instead of hole_type
+		return value.hole_type, usage_array(), typed_term.inferrable_filled_hole(inner_type, inner_term)
 	else
 		error("infer: unknown kind: " .. inferrable_term.kind)
 	end
@@ -2879,6 +2895,35 @@ function evaluate(typed_term, runtime_context)
 	elseif typed_term:is_effect_row_resolve() then
 		local ids, rest = typed_term:unwrap_effect_row_resolve()
 		return value.effect_row(ids, evaluate(rest, runtime_context))
+	elseif typed_term:is_checkable_hole() then
+		local goal_type = typed_term:unwrap_checkable_hole()
+		print("reached a checkable hole!")
+		print("the expected type is this:")
+		print(goal_type)
+		return value.neutral(neutral_value.checkable_hole(goal_type))
+	elseif typed_term:is_checkable_filled_hole() then
+		local inner_type, inner_term, goal_type = typed_term:unwrap_checkable_filled_hole()
+		local inner_val = evaluate(inner_term, runtime_context)
+		print("reached a checkable filled hole!")
+		print("the type of the inner term is this:")
+		print(inner_type)
+		print("and it evaluates to this:")
+		print(inner_val)
+		print("the expected type is this:")
+		print(goal_type)
+		return value.neutral(neutral_value.checkable_filled_hole(inner_type, inner_val, goal_type))
+	elseif typed_term:is_inferrable_hole() then
+		print("reached an inferrable hole!")
+		return value.neutral(neutral_value.inferrable_hole)
+	elseif typed_term:is_inferrable_filled_hole() then
+		local inner_type, inner_term = typed_term:unwrap_inferrable_filled_hole()
+		local inner_val = evaluate(inner_term, runtime_context)
+		print("reached an inferrable filled hole!")
+		print("the type of the inner term is this:")
+		print(inner_type)
+		print("and it evaluates to this:")
+		print(inner_val)
+		return value.neutral(neutral_value.inferrable_filled_hole(inner_type, inner_val))
 	else
 		error("evaluate: unknown kind: " .. typed_term.kind)
 	end

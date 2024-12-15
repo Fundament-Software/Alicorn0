@@ -1111,6 +1111,39 @@ local function lambda_annotated_impl(syntax, env)
 	return true, term, resenv
 end
 
+local function hole_impl(syntax, env, goal, userdata)
+	local ok, val_and_env = syntax:match({
+		metalanguage.listmatch(
+			metalanguage.accept_handler,
+			exprs.expression(utils.accept_with_env, exprs.ExpressionArgs.new(terms.expression_goal.infer, env))
+		),
+		metalanguage.isnil(function()
+			return true, { env = env }
+		end),
+	}, metalanguage.failure_handler, env)
+	if not ok then
+		return ok, val_and_env
+	end
+	local val, env = utils.unpack_val_env(val_and_env)
+
+	if goal:is_infer() then
+		if not val then
+			return ok, terms.inferrable_term.hole, env
+		else
+			return ok, terms.inferrable_term.filled_hole(val), env
+		end
+	elseif goal:is_check() then
+		local goal_type = goal:unwrap_check() -- TODO: do i need this?
+		if not val then
+			return ok, terms.checkable_term.hole, env
+		else
+			return ok, terms.checkable_term.filled_hole(val), env
+		end
+	else
+		error("goal needs to be inferrable or checkable")
+	end
+end
+
 ---@type lua_operative
 local function startype_impl(syntax, env)
 	local ok, level_val, depth_val = syntax:match({
@@ -1498,6 +1531,7 @@ local core_operations = {
 	--tuple = evaluator.host_operative(tuple_type_impl),
 	--["tuple-of"] = evaluator.host_operative(tuple_of_impl),
 	--number = { type = types.type, val = types.number }
+	hole = exprs.host_operative(hole_impl, "hole_impl"),
 	["into-operative"] = exprs.host_operative(into_operative_impl, "into_operative_impl"),
 	["hackhack-host-term-of-inner"] = terms.inferrable_term.typed(
 		host_term_of_inner_type,

@@ -352,6 +352,12 @@ function value:is_union_type() end
 function value:unwrap_union_type() end
 ---@return boolean, value, value
 function value:as_union_type() end
+---@return boolean
+function value:is_hole_type() end
+---@return nil
+function value:unwrap_hole_type() end
+---@return boolean
+function value:as_hole_type() end
 
 ---@class (exact) valueType: EnumType
 ---@field define_enum fun(self: valueType, name: string, variants: Variants): valueType
@@ -413,4 +419,5 @@ function value:as_union_type() end
 ---@field variance_type fun(target_type: value): value
 ---@field intersection_type fun(left: value, right: value): value
 ---@field union_type fun(left: value, right: value): value
+---@field hole_type value
 return {}

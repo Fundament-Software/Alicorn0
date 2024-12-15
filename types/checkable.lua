@@ -28,6 +28,18 @@ function checkable:is_lambda() end
 function checkable:unwrap_lambda() end
 ---@return boolean, string, checkable
 function checkable:as_lambda() end
+---@return boolean
+function checkable:is_hole() end
+---@return nil
+function checkable:unwrap_hole() end
+---@return boolean
+function checkable:as_hole() end
+---@return boolean
+function checkable:is_filled_hole() end
+---@return inferrable
+function checkable:unwrap_filled_hole() end
+---@return boolean, inferrable
+function checkable:as_filled_hole() end
 
 ---@class (exact) checkableType: EnumType
 ---@field define_enum fun(self: checkableType, name: string, variants: Variants): checkableType
@@ -35,4 +47,6 @@ function checkable:as_lambda() end
 ---@field tuple_cons fun(elements: ArrayValue): checkable
 ---@field host_tuple_cons fun(elements: ArrayValue): checkable
 ---@field lambda fun(param_name: string, body: checkable): checkable
+---@field hole checkable
+---@field filled_hole fun(inner: inferrable): checkable
 return {}

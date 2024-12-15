@@ -1,6 +1,11 @@
 let host-arith-binop = (host-func-type (a : host-number, b : host-number) -> ((c : host-number)))
 let host-sub = (intrinsic "return function(a, b) return a - b end" : host-arith-binop)
 
+let hole_infer = (hole)
+let hole_filled_infer = (hole "idk")
+let hole_check = (host-sub 42 (hole))
+let hole_filled_check = (host-sub 42 (hole 69))
+
 #let host-sub = (intrinsic "return function(a, b) return a - b end" : (host-func-type (a : host-number, b : host-number) -> ((c : host-number))))
 
 #let foo = (record (bar = 5) (baz = 6))
