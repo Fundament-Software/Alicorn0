@@ -2010,7 +2010,7 @@ function infer(
 		local subject_type, subject_usages, subject_term = infer(subject, typechecking_context)
 		local constrain_variants = string_value_map()
 		for k, v in variants:pairs() do
-			constrain_variants[k] = typechecker_state:metavariable(typechecking_context, false):as_value()
+			constrain_variants:set(k, typechecker_state:metavariable(typechecking_context, false):as_value())
 		end
 		typechecker_state:flow(
 			subject_type,
@@ -2022,8 +2022,9 @@ function infer(
 		local term_variants = string_typed_map()
 		local result_types = {}
 		for k, v in variants:pairs() do
+			--TODO figure out where to store/retrieve the anchors correctly
 			local variant_type, variant_usages, variant_term =
-				infer(v, typechecking_context:append("#variant", constrain_variants:get(k), nil, nil)) --TODO improve
+				infer(v, typechecking_context:append("#variant", constrain_variants:get(k), nil, v.start_anchor)) --TODO improve
 			term_variants:set(k, variant_term)
 			result_types[#result_types + 1] = variant_type
 		end
@@ -2546,8 +2547,8 @@ function evaluate(typed_term, runtime_context)
 		local target_val = evaluate(target, runtime_context)
 		if target_val:is_enum_value() then
 			local variant, arg = target_val:unwrap_enum_value()
-			if variants[variant] then
-				return evaluate(variants[variant], runtime_context:append(arg))
+			if variants:get(variant) then
+				return evaluate(variants:get(variant), runtime_context:append(arg))
 			else
 				return evaluate(default, runtime_context:append(target_val))
 			end
