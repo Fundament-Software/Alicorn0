@@ -3,11 +3,13 @@
 
 require "pretty-printer" -- has side-effect of loading global p()
 
---jit.off()
-jit.opt.start("maxtrace=10000")
-jit.opt.start("maxmcode=4096")
-jit.opt.start("recunroll=5")
-jit.opt.start("loopunroll=60")
+if jit then
+	--jit.off()
+	jit.opt.start("maxtrace=10000")
+	jit.opt.start("maxmcode=4096")
+	jit.opt.start("recunroll=5")
+	jit.opt.start("loopunroll=60")
+end
 
 local startTime = os.clock()
 local checkpointTime = startTime
@@ -20,7 +22,7 @@ local terms = require "terms"
 local exprs = require "alicorn-expressions"
 local profile = require "profile"
 local getopt = require "getopt"
-local json = require "json"
+local json = require "libs.dkjson"
 
 local interpreter_argv, argv
 if arg then -- puc-rio lua, luajit
@@ -127,7 +129,7 @@ if profile_run then
 	print("Profile what:", profile_what)
 end
 
-local prelude = "testfile.alc"
+local prelude = "prelude.alc"
 
 local env = base_env.create()
 
