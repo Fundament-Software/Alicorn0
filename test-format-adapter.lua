@@ -1,5 +1,5 @@
-local metalanguage = require "../metalanguage"
-local format = require "temp-format"
+local metalanguage = require "metalanguage"
+local format = require "format"
 
 local function syntax_convert(tree)
 	if tree.kind == "list" then

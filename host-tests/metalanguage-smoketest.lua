@@ -1,5 +1,5 @@
-local metalang = require "../metalanguage"
-local testlang = require "../testlanguage"
+local metalanguage = require "../metalanguage"
+local testlanguage = require "../testlanguage"
 local format = require "../test-format-adapter"
 
 ---@class Env

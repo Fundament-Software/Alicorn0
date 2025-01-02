@@ -1,4 +1,4 @@
-local evaluator = require "../alicorn-evaluator"
+local evaluator = require "../evaluator"
 local format = require "../format-adapter"
 local base_env = require "../base-env"
 local types = require "../typesystem"
