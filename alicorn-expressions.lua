@@ -1,10 +1,8 @@
 -- get new version of let and do working with terms
 
-local metalanguage = require "./metalanguage"
--- local conexpr = require './contextual-exprs'
--- local types = require "./typesystem"
+local metalanguage = require "metalanguage"
 
-local terms = require "./terms"
+local terms = require "terms"
 local expression_goal = terms.expression_goal
 local runtime_context = terms.runtime_context
 --local typechecking_context = terms.typechecking_context
@@ -19,7 +17,7 @@ local value = terms.value
 --local host_environment_type = terms.host_environment_type
 --local host_inferrable_term_type = terms.host_inferrable_term_type
 
-local gen = require "./terms-generators"
+local gen = require "terms-generators"
 local array = gen.declare_array
 --local checkable_array = array(checkable_term)
 local inferrable_array = array(inferrable_term)
@@ -31,14 +29,13 @@ local name_array = array(gen.builtin_string)
 local param_info_explicit = value.param_info(value.visibility(visibility.explicit))
 local result_info_pure = value.result_info(result_info(purity.pure))
 
-local evaluator = require "./evaluator"
+local evaluator = require "evaluator"
 local const_combinator = evaluator.const_combinator
 local infer = evaluator.infer
 -- BUG: do not uncomment this, as speculation relies on changing evaluator.typechecking_state, which is masked by the local
 --local typechecker_state = evaluator.typechecker_state
 
---local p = require "pretty-print".prettyPrint
-local U = require "./alicorn-utils"
+local U = require "alicorn-utils"
 
 local semantic_error_mt = {
 	__tostring = function(self)
@@ -125,6 +122,11 @@ local collect_host_tuple
 ---@field goal expression_goal
 ---@field env Environment
 local ExpressionArgs = {}
+
+---@class TopLevelBlockArgs
+---@field exprargs ExpressionArgs
+---@field name string
+local TopLevelBlockArgs = {}
 
 ---Unpack ExpressionArgs into component parts
 ---@return expression_goal
@@ -233,8 +235,9 @@ end
 
 ---@param yard { n: integer, [integer]: TaggedOperator }
 ---@param output { n: integer, [integer]: ConstructedSyntax }
----@param anchor Anchor
-local function shunting_yard_pop(yard, output, anchor)
+---@param start_anchor Anchor
+---@param end_anchor Anchor
+local function shunting_yard_pop(yard, output, start_anchor, end_anchor)
 	local yard_height = yard.n
 	local output_length = output.n
 	local operator = yard[yard_height]
@@ -242,14 +245,25 @@ local function shunting_yard_pop(yard, output, anchor)
 	local operator_symbol = operator.symbol
 	if operator_type == OperatorType.Prefix then
 		local arg = output[output_length]
-		local tree = metalanguage.list(anchor, metalanguage.symbol(anchor, operator_symbol), arg)
+		local tree = metalanguage.list(
+			start_anchor,
+			end_anchor,
+			metalanguage.symbol(start_anchor, end_anchor, operator_symbol),
+			arg
+		)
 		yard[yard_height] = nil
 		yard.n = yard_height - 1
 		output[output_length] = tree
 	elseif operator_type == OperatorType.Infix then
 		local right = output[output_length]
 		local left = output[output_length - 1]
-		local tree = metalanguage.list(anchor, left, metalanguage.symbol(anchor, operator_symbol), right)
+		local tree = metalanguage.list(
+			start_anchor,
+			end_anchor,
+			left,
+			metalanguage.symbol(start_anchor, end_anchor, operator_symbol),
+			right
+		)
 		yard[yard_height] = nil
 		yard.n = yard_height - 1
 		output[output_length] = nil
@@ -304,10 +318,11 @@ end
 ---@param b ConstructedSyntax
 ---@param yard { n: integer, [integer]: TaggedOperator }
 ---@param output { n: integer, [integer]: ConstructedSyntax }
----@param anchor Anchor
+---@param start_anchor Anchor
+---@param end_anchor Anchor
 ---@return boolean
 ---@return ConstructedSyntax|string
-local function shunting_yard(a, b, yard, output, anchor)
+local function shunting_yard(a, b, yard, output, start_anchor, end_anchor)
 	-- first, collect all prefix operators
 	local is_prefix, prefix_symbol =
 		a:match({ metalanguage.issymbol(shunting_yard_prefix_handler) }, metalanguage.failure_handler, nil)
@@ -325,7 +340,7 @@ local function shunting_yard(a, b, yard, output, anchor)
 			type = OperatorType.Prefix,
 			symbol = prefix_symbol,
 		}
-		return shunting_yard(next_a, next_b, yard, output, anchor)
+		return shunting_yard(next_a, next_b, yard, output, start_anchor, end_anchor)
 	end
 	-- no more prefix operators, now handle infix
 	output.n = output.n + 1
@@ -343,19 +358,19 @@ local function shunting_yard(a, b, yard, output, anchor)
 	end
 	if not more then
 		while yard.n > 0 do
-			shunting_yard_pop(yard, output, anchor)
+			shunting_yard_pop(yard, output, start_anchor, end_anchor)
 		end
 		return true, output[1]
 	end
 	while yard.n > 0 and shunting_yard_should_pop(infix_symbol, yard[yard.n]) do
-		shunting_yard_pop(yard, output, anchor)
+		shunting_yard_pop(yard, output, start_anchor, end_anchor)
 	end
 	yard.n = yard.n + 1
 	yard[yard.n] = {
 		type = OperatorType.Infix,
 		symbol = infix_symbol,
 	}
-	return shunting_yard(next_a, next_b, yard, output, anchor)
+	return shunting_yard(next_a, next_b, yard, output, start_anchor, end_anchor)
 end
 
 ---@param symbol string
@@ -388,6 +403,75 @@ local function expression_infix_handler(_, left, symbol, right)
 	return true, OperatorType.Infix, symbol, left, right
 end
 
+---@param env Environment
+---@param metaval value
+---@return boolean, value
+local function speculate_pi_type(env, metaval)
+	return evaluator.typechecker_state:speculate(function()
+		local param_mv = evaluator.typechecker_state:metavariable(env.typechecking_context)
+		local result_mv = evaluator.typechecker_state:metavariable(env.typechecking_context)
+		local pi = value.pi(
+			param_mv:as_value(),
+			param_info_explicit,
+			value.closure(
+				"#spec-pi",
+				typed_term.literal(result_mv:as_value()),
+				env.typechecking_context.runtime_context
+			),
+			result_info_pure
+		)
+
+		U.tag(
+			"flow",
+			{ val = metaval, use = pi },
+			evaluator.typechecker_state.flow,
+			evaluator.typechecker_state,
+			metaval,
+			env.typechecking_context,
+			pi,
+			env.typechecking_context,
+			"Speculating on pi type"
+		)
+
+		return pi
+	end)
+end
+
+---HORRIBLE HACK MAKE THIS BETTER
+---@param env Environment
+---@param metaval value
+---@return boolean, value
+local function operative_test_hack(env, metaval)
+	local edges = evaluator.typechecker_state.graph.constrain_edges:to(
+		metaval:unwrap_neutral():unwrap_free():unwrap_metavariable().usage
+	)
+	local res = nil
+	for _, edge in ipairs(edges) do
+		if not edge.rel == evaluator.UniverseOmegaRelation then
+			do
+				return false
+			end
+			error "not a subtyping relation"
+		end
+		if evaluator.typechecker_state.values[edge.left][1]:is_operative_type() then
+			if not res then
+				res = evaluator.typechecker_state.values[edge.left][1]
+			else
+				do
+					return false
+				end
+				error "too many edges, couldn't pick one"
+			end
+		else
+			do
+				return false
+			end
+			error "was bound to something that wasn't an operative"
+		end
+	end
+	return true, res
+end
+
 ---@param args ExpressionArgs
 ---@param a ConstructedSyntax
 ---@param b ConstructedSyntax
@@ -404,7 +488,7 @@ local function expression_pairhandler(args, a, b)
 
 	-- if the expression is a list containing prefix and infix expressions,
 	-- parse it into a tree of simple prefix/infix expressions with shunting yard
-	local ok, syntax = shunting_yard(a, b, { n = 0 }, { n = 0 }, a.anchor)
+	local ok, syntax = shunting_yard(a, b, { n = 0 }, { n = 0 }, a.start_anchor, a.end_anchor)
 	if ok then
 		---@cast syntax ConstructedSyntax
 		is_operator, operator_type, operator, left, right = syntax:match({
@@ -428,13 +512,13 @@ local function expression_pairhandler(args, a, b)
 		if not ok then
 			return false, combiner
 		end
-		sargs = metalanguage.list(a.anchor, left)
+		sargs = metalanguage.list(a.start_anchor, a.end_anchor, left)
 	elseif is_operator and operator_type == OperatorType.Infix then
 		ok, combiner = env:get("_" .. operator .. "_")
 		if not ok then
 			return false, combiner
 		end
-		sargs = metalanguage.list(a.anchor, left, right)
+		sargs = metalanguage.list(a.start_anchor, a.end_anchor, left, right)
 	else
 		ok, combiner, env = a:match(
 			{ expression(metalanguage.accept_handler, ExpressionArgs.new(expression_goal.infer, env)) },
@@ -468,39 +552,16 @@ local function expression_pairhandler(args, a, b)
 			and type_of_term:unwrap_neutral():unwrap_free():is_metavariable()
 		) or type_of_term:is_range()
 	then
+		local ok, updated_type
 		-- Speculate that this is a pi type
-		local ok, pi = evaluator.typechecker_state:speculate(function()
-			local param_mv = evaluator.typechecker_state:metavariable(env.typechecking_context)
-			local result_mv = evaluator.typechecker_state:metavariable(env.typechecking_context)
-			local pi = value.pi(
-				param_mv:as_value(),
-				param_info_explicit,
-				value.closure(
-					"#spec-pi",
-					typed_term.literal(result_mv:as_value()),
-					env.typechecking_context.runtime_context
-				),
-				result_info_pure
-			)
-
-			U.tag(
-				"flow",
-				{ val = type_of_term, usa = pi },
-				evaluator.typechecker_state.flow,
-				evaluator.typechecker_state,
-				type_of_term,
-				env.typechecking_context,
-				pi,
-				env.typechecking_context,
-				"Speculating on pi type"
-			)
-
-			return pi
-		end)
+		ok, updated_type = speculate_pi_type(env, type_of_term)
+		if not ok then
+			ok, updated_type = operative_test_hack(env, type_of_term)
+		end
 		if not ok then
 			error("speculate DID NOT work for pi!: " .. tostring(pi))
 		end
-		type_of_term = pi
+		type_of_term = updated_type
 	end
 
 	local function call_operative()
@@ -514,14 +575,19 @@ local function expression_pairhandler(args, a, b)
 		-- if not operative_result_val:is_enum_value() then
 		-- 	p(operative_result_val.kind)
 		-- 	print(operative_result_val:pretty_print())
-		-- 	return false, "applying operative did not result in value term with kind enum_value, typechecker or lua operative mistake when applying " .. tostring(a.anchor) .. " to the args " .. tostring(b.anchor)
+		-- 	return false, "applying operative did not result in value term with kind enum_value, typechecker or lua operative mistake when applying " .. tostring(a.start_anchor) .. " to the args " .. tostring(b.start_anchor)
 		-- end
 		-- variants: ok, error
 		--if operative_result_val.variant == "error" then
-		--	return false, semantic_error.operative_apply_failed(operative_result_val.data, { a.anchor, b.anchor })
+		--	return false, semantic_error.operative_apply_failed(operative_result_val.data, { a.start_anchor, b.start_anchor })
 		--end
 
 		-- temporary, while it isn't a Maybe
+		if not operative_result_val:is_tuple_value() then
+			print("bad operative?", handler)
+			print("bad result val", operative_result_val)
+			error "operative handler didn't complete properly"
+		end
 		local operative_result_elems = operative_result_val:unwrap_tuple_value()
 		local data = operative_result_elems[1]:unwrap_host_value()
 		local env = operative_result_elems[2]:unwrap_host_value()
@@ -555,15 +621,22 @@ local function expression_pairhandler(args, a, b)
 			local metavar = evaluator.typechecker_state:metavariable(env.typechecking_context)
 			local metavalue = metavar:as_value()
 			local metaresult = evaluator.apply_value(result_type, metavalue)
-			if not metaresult:is_pi() then
+
+			local ok, pi = speculate_pi_type(env, metaresult)
+
+			if not ok then
 				error(
-					"calling function with implicit args, result type applied on implicit args must be a function type"
+					"calling function with implicit args, result type applied on implicit args must be a function type: "
+						.. metaresult:pretty_print()
+						.. "\n@@@tb1@@@\n"
+						.. pi
+						.. "\n@@@tb2@@@"
 				)
 			end
 
 			-- local new_term = inferrable_term.application(inferrable_term.typed(type_of_term, usage_array(), term), checkable_term.inferrable(inferrable_term.typed(param_type, usage_array(), terms.typed_term.literal(metavar:as_value()))))
 			term = typed_term.application(term, terms.typed_term.literal(metavar:as_value()))
-			type_of_term = metaresult
+			type_of_term = pi
 			param_type, param_info, result_type, result_info = type_of_term:unwrap_pi()
 		end
 
@@ -583,7 +656,12 @@ local function expression_pairhandler(args, a, b)
 		---@cast res inferrable
 
 		if result_info:unwrap_result_info():unwrap_result_info():is_effectful() then
-			error("nyi")
+			local bind = terms.binding.program_sequence(res, a.start_anchor)
+			env = env:bind_local(bind)
+			ok, res = env:get("#program-sequence") --TODO refactor
+			if not ok then
+				error "broken environment?"
+			end
 		end
 
 		if goal:is_check() then
@@ -608,7 +686,7 @@ local function expression_pairhandler(args, a, b)
 		}, metalanguage.failure_handler, nil)
 
 		if not ok then
-			error(semantic_error.host_function_argument_collect_failed(tuple, { a.anchor, b.anchor }, {
+			error(semantic_error.host_function_argument_collect_failed(tuple, { a.start_anchor, b.start_anchor }, {
 				host_function_type = type_of_term,
 				host_function_value = term,
 			}, orig_env))
@@ -633,7 +711,7 @@ local function expression_pairhandler(args, a, b)
 				)
 			)
 			---@type Environment
-			env = env:bind_local(terms.binding.program_sequence(app, a.anchor))
+			env = env:bind_local(terms.binding.program_sequence(app, a.start_anchor))
 			ok, res = env:get("#program-sequence")
 			if not ok then
 				error(res)
@@ -705,7 +783,7 @@ local function expression_symbolhandler(args, name)
 			part = inferrable_term.record_elim(
 				part,
 				name_array(front or name),
-				inferrable_term.bound_variable(#env.typechecking_context + 1)
+				inferrable_term.bound_variable(env.typechecking_context:len() + 1)
 			)
 		end
 		if goal:is_check() then
@@ -789,7 +867,7 @@ expression = metalanguage.reducer(
 
 ---@class OperativeError
 ---@field cause any
----@field anchor Anchor
+---@field start_anchor Anchor
 ---@field operative_name string
 local OperativeError = {}
 local external_error_mt = {
@@ -797,7 +875,7 @@ local external_error_mt = {
 		local message = "Lua error occured inside host operative "
 			.. self.operative_name
 			.. " "
-			.. (self.anchor and tostring(self.anchor) or " at unknown position")
+			.. (self.start_anchor and tostring(self.start_anchor) or " at unknown position")
 			.. ":\n"
 			.. tostring(self.cause)
 		return message
@@ -806,12 +884,14 @@ local external_error_mt = {
 }
 
 ---@param cause any
----@param anchor Anchor
+---@param start_anchor Anchor
+---@param end_anchor Anchor
 ---@param operative_name any
 ---@return OperativeError
-function OperativeError.new(cause, anchor, operative_name)
+function OperativeError.new(cause, start_anchor, end_anchor, operative_name)
 	return setmetatable({
-		anchor = anchor,
+		start_anchor = start_anchor,
+		end_anchor = end_anchor,
 		cause = cause,
 		operative_name = operative_name,
 	}, external_error_mt)
@@ -834,7 +914,7 @@ local function host_operative(fn, name)
 		-- userdata isn't passed in as it's always empty for host operatives
 		local ok, res, env = fn(syn, env, goal)
 		if not ok then
-			error(OperativeError.new(res, syn.anchor, debugstring))
+			error(OperativeError.new(res, syn.start_anchor, syn.end_anchor, debugstring))
 		end
 		if
 			(goal:is_infer() and inferrable_term.value_check(res))
@@ -846,7 +926,7 @@ local function host_operative(fn, name)
 			---@cast res inferrable
 			res = checkable_term.inferrable(res)
 		else
-			error("mismatch in goal and returned term")
+			error("mismatch in goal and returned term\ngoal: " .. tostring(goal) .. "\nres: " .. tostring(res))
 		end
 		if not env or not env.exit_block then
 			print(
@@ -976,7 +1056,11 @@ collect_tuple = metalanguage.reducer(
 					)
 				end
 				if not ok and type(continue) == "string" then
-					continue = continue .. " (should have " .. ", found " .. tostring(#collected_terms) .. " so far)"
+					continue = continue
+						.. " (should have "
+						.. ", found "
+						.. tostring(collected_terms:len())
+						.. " so far)"
 				end
 			else
 				ok, continue, next_term, syntax, env = syntax:match({
@@ -1050,14 +1134,18 @@ collect_host_tuple = metalanguage.reducer(
 					desc = terms.cons(
 						desc,
 						value.closure(
-							"#collect-tuple-param",
+							"#collect-host-tuple-param",
 							typed_term.literal(value.singleton(next_elem_type, next_val)),
 							env.typechecking_context.runtime_context
 						)
 					)
 				end
 				if not ok and type(continue) == "string" then
-					continue = continue .. " (should have " .. ", found " .. tostring(#collected_terms) .. " so far)"
+					continue = continue
+						.. " (should have "
+						.. ", found "
+						.. tostring(collected_terms:len())
+						.. " so far)"
 				end
 			else
 				ok, continue, next_term, syntax, env = syntax:match({
@@ -1126,7 +1214,8 @@ local block = metalanguage.reducer(
 		if not goal:is_infer() then
 			error("NYI non-infer cases for block")
 		end
-		local lastval, newval
+		local lastval = inferrable_term.tuple_cons(inferrable_array())
+		local newval
 		local ok, continue = true, true
 		while ok and continue do
 			ok, continue, newval, syntax, env = syntax:match({
@@ -1145,7 +1234,90 @@ local block = metalanguage.reducer(
 	"block"
 )
 
--- example usage of host_applicative
+local top_level_block = metalanguage.reducer(
+	---@param syntax ConstructedSyntax
+	---@param args TopLevelBlockArgs
+	---@return boolean
+	---@return inferrable|checkable|string
+	---@return Environment?
+	function(syntax, args)
+		local goal, env = args.exprargs:unwrap()
+		assert(goal:is_infer(), "NYI non-infer cases for block")
+		local lastval = inferrable_term.tuple_cons(inferrable_array())
+		local newval
+		local ok, continue = true, true
+
+		--slightly hacky length measurement, but oh well
+		local length, tail = 0, syntax
+		while ok and continue do
+			ok, continue, tail = tail:match({
+				metalanguage.ispair(function(ud, a, b)
+					return true, true, b
+				end),
+				metalanguage.isnil(function(ud)
+					return true, false
+				end),
+			}, metalanguage.failure_handler, nil)
+			if not ok then
+				return false, continue
+			end
+			length = length + 1
+		end
+		continue = true
+		io.write(
+			"\nprocessing "
+				.. tostring(args.name)
+				.. " --- 0 / "
+				.. tostring(length)
+				.. " @ "
+				.. tostring(tail and tail.start_anchor or (syntax and syntax.start_anchor) or "")
+				.. " … "
+				.. tostring(tail and tail.end_anchor or (syntax and syntax.end_anchor) or "")
+				.. ""
+		)
+		local progress = 0
+		while ok and continue do
+			ok, continue, newval, syntax, env = syntax:match({
+				metalanguage.ispair(collect_tuple_pair_handler),
+				metalanguage.isnil(collect_tuple_nil_handler),
+			}, metalanguage.failure_handler, ExpressionArgs.new(goal, env))
+			if ok and continue then
+				lastval = newval
+			end
+			-- print("newval", tostring(newval))
+			progress = progress + 1
+			local line_setup_sequence = ""
+			if U.file_is_terminal() then
+				line_setup_sequence = "\x1bM"
+			end
+			io.write(
+				line_setup_sequence
+					.. "\rprocessing "
+					.. tostring(args.name)
+					.. " --- "
+					.. tostring(progress)
+					.. " / "
+					.. tostring(length)
+					.. " @ "
+					.. tostring(newval and newval.start_anchor or (syntax and syntax.start_anchor) or "") --FIXME wrong anchors
+					.. " … "
+					.. tostring(newval and newval.end_anchor or (syntax and syntax.end_anchor) or "")
+					.. ""
+			)
+			io.flush()
+		end
+		io.write("\n")
+		if not ok then
+			io.write("\nFailed!\n")
+			return false, continue
+		end
+		io.write("\nFinished!\n")
+		return true, lastval, env
+	end,
+	"block"
+)
+
+-- example usage of primitive_applicative
 -- add(a, b) = a + b ->
 -- local prim_num = terms.value.prim_number_type
 -- host_applicative(function(a, b) return a + b end, {prim_num, prim_num}, {prim_num}),
@@ -1222,6 +1394,7 @@ local alicorn_expressions = {
 	inferred_expression = inferred_expression,
 	-- constexpr = constexpr
 	block = block,
+	top_level_block = top_level_block,
 	ExpressionArgs = ExpressionArgs,
 	host_operative = host_operative,
 	host_applicative = host_applicative,
@@ -1231,6 +1404,6 @@ local alicorn_expressions = {
 	eval = eval,
 	eval_block = eval_block,
 }
-local internals_interface = require "./internals-interface"
+local internals_interface = require "internals-interface"
 internals_interface.alicorn_expressions = alicorn_expressions
 return alicorn_expressions

@@ -1,9 +1,3 @@
--- local gen = require '../terms-generators'
--- local terms = require '../terms'
--- local eval = require '../evaluator'
-
----
-
 local terms = require "../terms"
 local exprs = require "../alicorn-expressions"
 
@@ -16,9 +10,6 @@ local environment = require "../environment"
 local trie = require "../lazy-prefix-tree"
 
 local src = "+ 621 926" -- fs.readFileSync("testfile.alc")
---print("read code")
---print(src)
---print("parsing code")
 local code = format.read(src, "inline")
 --p("code", code)
 

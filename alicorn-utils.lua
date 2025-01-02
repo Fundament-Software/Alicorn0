@@ -185,6 +185,24 @@ function M.commit(t)
 	return original
 end
 
+---Given a shadowed table, unlocks the shadowed table below (you should drop this table immediately)
+---@generic T : table
+---@param t T
+---@return T
+function M.revert(t)
+	setmetatable(t, nil)
+	local original = t.__shadow
+	local length = t.__length
+	t.__shadow = nil
+	t.__length = nil
+
+	if original then
+		rawset(original, "__lock", nil)
+	end
+
+	return original
+end
+
 ---@generic T : table
 ---@param src T
 ---@return T
@@ -223,10 +241,9 @@ local memo_end_tag = {}
 function M.memoize(fn)
 	local memotab = setmetatable({}, memo_mt)
 	local function wrapfn(...)
-		local args = { ... }
-		local nargs = select("#", ...)
+		local args = table.pack(...)
 		local thismemo = memotab
-		for i = 1, nargs do
+		for i = 1, args.n do
 			local nextmemo = thismemo[args[i]]
 			if not nextmemo then
 				nextmemo = setmetatable({}, memo_mt)
@@ -240,6 +257,50 @@ function M.memoize(fn)
 		return thismemo[memo_end_tag]
 	end
 	return wrapfn
+end
+
+---strips ansi character attributes (e.g. colors) from a string
+---@param s string
+---@return string
+---@return integer
+function M.strip_ansi(s)
+	return s:gsub("\x1b%[[^m]*m", "")
+end
+
+function M.here()
+	local info = debug.getinfo(2, "Sl")
+	return " @ " .. info.source .. ":" .. info.currentline
+end
+
+function M.file_is_terminal(input_file)
+	-- TODO
+	return false
+end
+
+function M.get_cursor_position(input_file, output_file)
+	if input_file == nil then
+		input_file = io.input()
+	end
+	if output_file == nil then
+		output_file = io.output()
+	end
+	output_file:write("\x1b[6n")
+	local terminal_data = input_file:read(1)
+	if terminal_data ~= "\x9b" then
+		terminal_data = terminal_data .. input_file:read(1)
+		assert(terminal_data == "\x1b[")
+	end
+	terminal_data = input_file:read("*n")
+	assert(terminal_data ~= nil)
+	local cursor_line = terminal_data
+	terminal_data = input_file:read(1)
+	assert(terminal_data == ";")
+	terminal_data = input_file:read("*n")
+	assert(terminal_data ~= nil)
+	local cursor_column = terminal_data
+	terminal_data = input_file:read(1)
+	assert(terminal_data == "R")
+	return cursor_line, cursor_column
 end
 
 return M

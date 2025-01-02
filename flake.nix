@@ -22,13 +22,7 @@
         pkgs = nixpkgs.legacyPackages.${system};
         luajit = pkgs.luajit.override {
           self = luajit;
-          version = "2.1.0-beta3";
-          src = pkgs.fetchFromGitHub {
-            owner = "LuaJIT";
-            repo = "LuaJIT";
-            rev = "50936d784474747b4569d988767f1b5bab8bb6d0";
-            hash = "sha256-oPU3hwSgL+d/4yW7r7maugDi+LA8QmvFN7ssEgC9B70=";
-          };
+          enable52Compat = true;
         };
         luajitWithPackages = luajit.withPackages (ps: with ps; [ luasocket lpeg inspect luaunit tl lqc ]);
         alicorn-check = file:
@@ -81,6 +75,7 @@
               statix.enable = true;
               nixpkgs-fmt.enable = true;
               stylua.enable = true;
+              stylua.excludes = [ "libs/" "vendor/" ];
               deadnix.enable = true;
             };
           };
@@ -106,10 +101,10 @@
               (pkgs.lua-language-server.overrideAttrs {
                 version = "unstable";
                 src = pkgs.fetchFromGitHub {
-                  owner = "luals";
+                  owner = "LuaLS";
                   repo = "lua-language-server";
-                  rev = "7d06e5573c8188e61516e987b0d796a40f718b05";
-                  hash = "sha256-mNG/IqRkXHVwUU06e1oD/3WBa5k09ddYUsiQN4MFaOU";
+                  rev = "db667f6db7ea6852d38460a1ed046eb85bb9e5ff";
+                  hash = "sha256-ZYaiSBSnO9lPb/5pYa0OiL0KParuMb4/jIBtE3S/Ruo=";
                   fetchSubmodules = true;
                 };
 

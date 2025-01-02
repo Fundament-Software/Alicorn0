@@ -1,8 +1,9 @@
 ---@class PrettyPrint
+---@field opts PrettyPrintOpts
 local PrettyPrint = {}
 local PrettyPrint_mt = { __index = PrettyPrint }
 
-local prettyprintable = require "./pretty-printable-trait"
+local traits = require "traits"
 
 local kind_field = "kind"
 local hidden_fields = {
@@ -23,9 +24,13 @@ local hidden_fields = {
 	end,
 }
 
+---@alias PrettyPrintOpts {default_print: boolean?}
+
 ---@return PrettyPrint
-function PrettyPrint.new()
-	return setmetatable({}, PrettyPrint_mt)
+---@param opts PrettyPrintOpts?
+function PrettyPrint:new(opts)
+	opts = opts or {}
+	return setmetatable({ opts = { default_print = opts.default_print } }, PrettyPrint_mt)
 end
 
 ---@param unknown any
@@ -34,17 +39,25 @@ function PrettyPrint:any(unknown, ...)
 	local ty = type(unknown)
 	if ty == "string" then
 		self[#self + 1] = string.format("%q", unknown)
+	elseif ty == "function" then
+		self:func(unknown)
 	elseif ty == "table" then
 		if self.depth and self.depth > 50 then
 			self[#self + 1] = "DEPTH LIMIT EXCEEDED"
 			return
 		end
 		local mt = getmetatable(unknown)
-		local via_trait = mt and prettyprintable[mt]
-		if via_trait and via_trait.print then
-			via_trait.print(unknown, self, ...)
+		local via_trait = mt and traits.pretty_print:get(mt)
+		if via_trait then
+			if self.opts.default_print then
+				via_trait.default_print(unknown, self, ...)
+			else
+				via_trait.pretty_print(unknown, self, ...)
+			end
 		elseif mt and mt.__tostring then
 			self[#self + 1] = tostring(unknown)
+		elseif mt and mt.__call then
+			self:func(mt.__call)
 		else
 			self:table(unknown)
 		end
@@ -136,7 +149,7 @@ function PrettyPrint:table(fields, ...)
 	local count = 0
 	local num = 0
 	local nums = {}
-	for k, v in pairs(fields) do
+	for k in pairs(fields) do
 		if k == "kind" then
 			self[#self + 1] = " "
 			self[#self + 1] = fields.kind
@@ -266,16 +279,40 @@ function PrettyPrint:unit(name)
 	self[#self + 1] = name
 end
 
+function PrettyPrint:func(f)
+	local d = debug.getinfo(f, "Su")
+	local params = {}
+	for i = 1, d.nparams do
+		params[#params + 1] = debug.getlocal(f, i)
+	end
+	if d.isvararg then
+		params[#params + 1] = "..."
+	end
+	self[#self + 1] =
+		string.format("%s function(%s): %s:%d", d.what, table.concat(params, ", "), d.source, d.linedefined)
+end
+
 function PrettyPrint_mt:__tostring()
 	return table.concat(self, "")
 end
 
+local function pretty_print(unknown, ...)
+	local pp = PrettyPrint:new()
+	pp:any(unknown, ...)
+	return tostring(pp)
+end
+
+local function default_print(unknown, ...)
+	local pp = PrettyPrint:new({ default_print = true })
+	pp:any(unknown, ...)
+	return tostring(pp)
+end
+
 local function s(...)
 	local res = {}
-	for i, v in ipairs { ... } do
-		local pp = PrettyPrint:new()
-		pp:any(v)
-		res[i] = tostring(pp)
+	local args = table.pack(...)
+	for i = 1, args.n do
+		res[i] = pretty_print(args[i])
 	end
 	return table.concat(res, "    ")
 end
@@ -288,7 +325,8 @@ _G["p"] = p
 
 return {
 	PrettyPrint = PrettyPrint,
-	prettyprintable = prettyprintable,
+	pretty_print = pretty_print,
+	default_print = default_print,
 	s = s,
 	p = p,
 }

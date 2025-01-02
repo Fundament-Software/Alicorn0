@@ -1,5 +1,5 @@
-local fibbuf = require("./fibonacci-buffer")
-local gen = require("./terms-generators")
+local fibbuf = require "fibonacci-buffer"
+local gen = require "terms-generators"
 local typechecking_context_type
 local runtime_context_type
 local DescCons
@@ -31,11 +31,7 @@ end
 ---@return PrettyPrintingContext
 function PrettyprintingContext.from_runtime_context(context)
 	local self = {}
-	local bindings = fibbuf()
-	for i = 1, context.bindings:len() do
-		bindings = bindings:append({ name = string.format("#rctx%d", i) })
-	end
-	self.bindings = bindings
+	self.bindings = context.bindings
 	return setmetatable(self, prettyprinting_context_mt)
 end
 
@@ -56,10 +52,12 @@ function PrettyprintingContext:append(name)
 	return setmetatable(copy, prettyprinting_context_mt)
 end
 
-prettyprinting_context_mt.__index = PrettyprintingContext
-function prettyprinting_context_mt:__len()
+function PrettyprintingContext:len()
 	return self.bindings:len()
 end
+
+prettyprinting_context_mt.__index = PrettyprintingContext
+prettyprinting_context_mt.__len = PrettyprintingContext.len
 
 local prettyprinting_context_type =
 	gen.declare_foreign(gen.metatable_equality(prettyprinting_context_mt), "PrettyPrintingContext")
@@ -109,7 +107,7 @@ local function let_helper(pp, name, expr, context)
 end
 
 ---@param pp PrettyPrint
----@param names string[]
+---@param names ArrayValue
 ---@param subject inferrable | typed
 ---@param context PrettyPrintingContext
 ---@return PrettyPrintingContext
@@ -120,7 +118,7 @@ local function tuple_elim_helper(pp, names, subject, context)
 	pp:unit("(")
 	pp:unit(pp:_resetcolor())
 
-	for i, name in ipairs(names) do
+	for i, name in names:ipairs() do
 		inner_context = inner_context:append(name)
 
 		if i > 1 then
@@ -142,13 +140,13 @@ local function tuple_elim_helper(pp, names, subject, context)
 end
 
 ---@class (exact) TupleDescFlat
----@field [1] string[]
+---@field [1] ArrayValue
 ---@field [2] inferrable | typed
 ---@field [3] PrettyPrintingContext
 
 ---@param pp PrettyPrint
 ---@param members TupleDescFlat[]
----@param names string[]?
+---@param names ArrayValue?
 local function tuple_type_helper(pp, members, names)
 	local m = #members
 
@@ -162,7 +160,7 @@ local function tuple_type_helper(pp, members, names)
 		names = members[m][1]
 	end
 
-	local n = type(names) == "table" and #names or 0
+	local n = type(names) == "table" and names:len() or 0
 
 	for i, mem in ipairs(members) do
 		if i > 1 then
@@ -290,7 +288,7 @@ end
 ---@param context PrettyPrintingContext
 ---@return boolean
 ---@return boolean
----@return string | string[]?
+---@return (string | ArrayValue)?
 ---@return inferrable
 ---@return PrettyPrintingContext
 local function inferrable_destructure_helper(term, context)
@@ -303,7 +301,7 @@ local function inferrable_destructure_helper(term, context)
 		-- so we pretty this anyway
 		local name, expr, body = term:unwrap_let()
 		local ok, index = expr:as_bound_variable()
-		local is_destructure = ok and index == #context
+		local is_destructure = ok and index == context:len()
 		if is_destructure then
 			context = context:append(name)
 			return true, true, name, body, context
@@ -311,9 +309,9 @@ local function inferrable_destructure_helper(term, context)
 	elseif term:is_tuple_elim() then
 		local names, subject, body = term:unwrap_tuple_elim()
 		local ok, index = subject:as_bound_variable()
-		local is_destructure = ok and index == #context
+		local is_destructure = ok and index == context:len()
 		if is_destructure then
-			for _, name in ipairs(names) do
+			for _, name in names:ipairs() do
 				context = context:append(name)
 			end
 			return true, false, names, body, context
@@ -326,7 +324,7 @@ end
 ---@param context PrettyPrintingContext
 ---@return boolean
 ---@return boolean
----@return string | string[]?
+---@return (string | ArrayValue)?
 ---@return typed
 ---@return PrettyPrintingContext
 local function typed_destructure_helper(term, context)
@@ -339,7 +337,7 @@ local function typed_destructure_helper(term, context)
 		-- so we pretty this anyway
 		local name, expr, body = term:unwrap_let()
 		local ok, index = expr:as_bound_variable()
-		local is_destructure = ok and index == #context
+		local is_destructure = ok and index == context:len()
 		if is_destructure then
 			context = context:append(name)
 			return is_destructure, true, name, body, context
@@ -347,9 +345,9 @@ local function typed_destructure_helper(term, context)
 	elseif term:is_tuple_elim() then
 		local names, subject, _, body = term:unwrap_tuple_elim()
 		local ok, index = subject:as_bound_variable()
-		local is_destructure = ok and index == #context
+		local is_destructure = ok and index == context:len()
 		if is_destructure then
-			for _, name in ipairs(names) do
+			for _, name in names:ipairs() do
 				context = context:append(name)
 			end
 			return is_destructure, false, names, body, context
@@ -364,17 +362,17 @@ end
 ---@return TupleDescFlat[]?
 ---@return integer?
 local function inferrable_tuple_type_flatten(desc, context)
-	local enum_type, constructor, arg = desc:unwrap_enum_cons()
-	local ok, universe = enum_type:as_tuple_desc_type()
-	-- TODO: what is universe?
+	local ok, constructor, arg = desc:as_enum_cons()
 	if not ok then
-		-- non-fatal, but weird
-		print("override_pretty: inferrable.tuple_type: enum_type must be tuple_desc_type")
+		return false
 	end
 	if constructor == DescCons.empty then
 		return true, {}, 0
 	elseif constructor == DescCons.cons then
 		local elements = arg:unwrap_tuple_cons()
+		if elements:len() ~= 2 then
+			return false
+		end
 		local desc = elements[1]
 		local f = elements[2]
 		local ok, param_name, _, body, _ = f:as_annotated_lambda()
@@ -383,7 +381,7 @@ local function inferrable_tuple_type_flatten(desc, context)
 		end
 		local inner_context = context:append(param_name)
 		local _, _, names, body, inner_context = inferrable_destructure_helper(body, inner_context)
-		---@cast names string[]
+		---@cast names ArrayValue
 		local ok, prev, n = inferrable_tuple_type_flatten(desc, context)
 		if not ok then
 			return false
@@ -396,17 +394,50 @@ local function inferrable_tuple_type_flatten(desc, context)
 	end
 end
 
+-- flatten at all costs!!
+---@param desc inferrable
+---@return (inferrable|string)[]
+---@return integer
+local function inferrable_tuple_type_hydraulicpress(desc)
+	local ok, constructor, arg = desc:as_enum_cons()
+	if not ok then
+		return { "<UNHANDLED EDGE CASE>" }, 1
+	end
+	if constructor == DescCons.empty then
+		return {}, 0
+	elseif constructor == DescCons.cons then
+		local elements = arg:unwrap_tuple_cons()
+		if elements:len() ~= 2 then
+			return { "<UNHANDLED EDGE CASE>" }, 1
+		end
+		local desc = elements[1]
+		local f = elements[2]
+		local prev, n = inferrable_tuple_type_hydraulicpress(desc)
+		n = n + 1
+		prev[n] = f
+		return prev, n
+	else
+		return { "<UNHANDLED EDGE CASE>" }, 1
+	end
+end
+
 ---@param desc typed
 ---@param context PrettyPrintingContext
 ---@return boolean
 ---@return TupleDescFlat[]?
 ---@return integer?
 local function typed_tuple_type_flatten(desc, context)
-	local constructor, arg = desc:unwrap_enum_cons()
+	local ok, constructor, arg = desc:as_enum_cons()
+	if not ok then
+		return false
+	end
 	if constructor == DescCons.empty then
 		return true, {}, 0
 	elseif constructor == DescCons.cons then
 		local elements = arg:unwrap_tuple_cons()
+		if elements:len() ~= 2 then
+			return false
+		end
 		local desc = elements[1]
 		local f = elements[2]
 		local ok, param_name, body = f:as_lambda()
@@ -415,7 +446,7 @@ local function typed_tuple_type_flatten(desc, context)
 		end
 		local inner_context = context:append(param_name)
 		local _, _, names, body, inner_context = typed_destructure_helper(body, inner_context)
-		---@cast names string[]
+		---@cast names ArrayValue
 		local ok, prev, n = typed_tuple_type_flatten(desc, context)
 		if not ok then
 			return false
@@ -425,6 +456,33 @@ local function typed_tuple_type_flatten(desc, context)
 		return true, prev, n
 	else
 		return false
+	end
+end
+
+-- flatten at all costs!!
+---@param desc typed
+---@return (typed|string)[]
+---@return integer
+local function typed_tuple_type_hydraulicpress(desc)
+	local ok, constructor, arg = desc:as_enum_cons()
+	if not ok then
+		return { "<UNHANDLED EDGE CASE>" }, 1
+	end
+	if constructor == DescCons.empty then
+		return {}, 0
+	elseif constructor == DescCons.cons then
+		local elements = arg:unwrap_tuple_cons()
+		if elements:len() ~= 2 then
+			return { "<UNHANDLED EDGE CASE>" }, 1
+		end
+		local desc = elements[1]
+		local f = elements[2]
+		local prev, n = typed_tuple_type_hydraulicpress(desc)
+		n = n + 1
+		prev[n] = f
+		return prev, n
+	else
+		return { "<UNHANDLED EDGE CASE>" }, 1
 	end
 end
 
@@ -438,6 +496,9 @@ local function value_tuple_type_flatten(desc)
 		return true, {}, 0
 	elseif constructor == DescCons.cons then
 		local elements = arg:unwrap_tuple_value()
+		if elements:len() ~= 2 then
+			return false
+		end
 		local desc = elements[1]
 		local f = elements[2]
 		local ok, param_name, code, capture = f:as_closure()
@@ -447,7 +508,7 @@ local function value_tuple_type_flatten(desc)
 		local context = ensure_context(capture)
 		local inner_context = context:append(param_name)
 		local _, _, names, code, inner_context = typed_destructure_helper(code, inner_context)
-		---@cast names string[]
+		---@cast names ArrayValue
 		local ok, prev, n = value_tuple_type_flatten(desc)
 		if not ok then
 			return false
@@ -457,6 +518,30 @@ local function value_tuple_type_flatten(desc)
 		return true, prev, n
 	else
 		return false
+	end
+end
+
+-- flatten at all costs!!
+---@param desc value
+---@return (value|string)[]
+---@return integer
+local function value_tuple_type_hydraulicpress(desc)
+	local constructor, arg = desc:unwrap_enum_value()
+	if constructor == DescCons.empty then
+		return {}, 0
+	elseif constructor == DescCons.cons then
+		local elements = arg:unwrap_tuple_value()
+		if elements:len() ~= 2 then
+			return { "<UNHANDLED EDGE CASE>" }, 1
+		end
+		local desc = elements[1]
+		local f = elements[2]
+		local prev, n = value_tuple_type_hydraulicpress(desc)
+		n = n + 1
+		prev[n] = f
+		return prev, n
+	else
+		return { "<UNHANDLED EDGE CASE>" }, 1
 	end
 end
 
@@ -528,7 +613,7 @@ function inferrable_term_override_pretty:bound_variable(pp, context)
 
 	pp:_enter()
 
-	if #context >= index then
+	if context:len() >= index then
 		pp:unit(context:get_name(index))
 	else
 		-- TODO: warn on context too short?
@@ -554,7 +639,7 @@ function typed_term_override_pretty:bound_variable(pp, context)
 
 	pp:_enter()
 
-	if #context >= index then
+	if context:len() >= index then
 		pp:unit(context:get_name(index))
 	else
 		-- TODO: warn on context too short?
@@ -681,7 +766,7 @@ function inferrable_term_override_pretty:annotated_lambda(pp, context)
 	pp:unit(pp:_resetcolor())
 
 	if is_tuple_type and is_destructure then
-		---@cast names string[]
+		---@cast names ArrayValue
 		---@cast members TupleDescFlat[]
 		if #members == 0 then
 			pp:unit(pp:_color())
@@ -691,14 +776,14 @@ function inferrable_term_override_pretty:annotated_lambda(pp, context)
 			tuple_type_helper(pp, members, names)
 		end
 	elseif is_destructure then
-		---@cast names string[]
+		---@cast names ArrayValue
 		-- tuple_elim on param but its type isn't a tuple type???
 		-- probably shouldn't happen, but here's a handler
 		pp:unit(pp:_color())
 		pp:unit("(")
 		pp:unit(pp:_resetcolor())
 
-		for i, name in ipairs(names) do
+		for i, name in names:ipairs() do
 			if i > 1 then
 				pp:unit(" ")
 			end
@@ -758,14 +843,14 @@ function typed_term_override_pretty:lambda(pp, context)
 	pp:unit(pp:_resetcolor())
 
 	if is_destructure then
-		---@cast names string[]
-		if #names == 0 then
+		---@cast names ArrayValue
+		if names:len() == 0 then
 			pp:unit(pp:_color())
 			pp:unit("()")
 			pp:unit(pp:_resetcolor())
 		end
 
-		for i, name in ipairs(names) do
+		for i, name in names:ipairs() do
 			if i > 1 then
 				pp:unit(" ")
 			end
@@ -812,14 +897,14 @@ function value_override_pretty:closure(pp)
 	pp:unit(pp:_resetcolor())
 
 	if is_destructure then
-		---@cast names string[]
-		if #names == 0 then
+		---@cast names ArrayValue
+		if names:len() == 0 then
 			pp:unit(pp:_color())
 			pp:unit("()")
 			pp:unit(pp:_resetcolor())
 		end
 
-		for i, name in ipairs(names) do
+		for i, name in names:ipairs() do
 			if i > 1 then
 				pp:unit(" ")
 			end
@@ -890,7 +975,7 @@ function inferrable_term_override_pretty:pi(pp, context)
 	if not result_is_readable then
 		pp:any(param_type, context)
 	elseif param_is_tuple_type and result_is_destructure then
-		---@cast param_names string[]
+		---@cast param_names ArrayValue
 		---@cast param_members TupleDescFlat[]
 		if #param_members == 0 then
 			pp:unit(pp:_color())
@@ -900,14 +985,14 @@ function inferrable_term_override_pretty:pi(pp, context)
 			tuple_type_helper(pp, param_members, param_names)
 		end
 	elseif result_is_destructure then
-		---@cast param_names string[]
+		---@cast param_names ArrayValue
 		-- tuple_elim on params but params aren't a tuple type???
 		-- probably shouldn't happen, but here's a handler
 		pp:unit(pp:_color())
 		pp:unit("(")
 		pp:unit(pp:_resetcolor())
 
-		for i, name in ipairs(param_names) do
+		for i, name in param_names:ipairs() do
 			if i > 1 then
 				pp:unit(" ")
 			end
@@ -991,7 +1076,7 @@ function inferrable_term_override_pretty:host_function_type(pp, context)
 	if not result_is_readable then
 		pp:any(param_type, context)
 	elseif param_is_tuple_type and result_is_destructure then
-		---@cast param_names string[]
+		---@cast param_names ArrayValue
 		---@cast param_members TupleDescFlat[]
 		if #param_members == 0 then
 			pp:unit(pp:_color())
@@ -1001,14 +1086,14 @@ function inferrable_term_override_pretty:host_function_type(pp, context)
 			tuple_type_helper(pp, param_members, param_names)
 		end
 	elseif result_is_destructure then
-		---@cast param_names string[]
+		---@cast param_names ArrayValue
 		-- tuple_elim on params but params aren't a tuple type???
 		-- probably shouldn't happen, but here's a handler
 		pp:unit(pp:_color())
 		pp:unit("(")
 		pp:unit(pp:_resetcolor())
 
-		for i, name in ipairs(param_names) do
+		for i, name in param_names:ipairs() do
 			if i > 1 then
 				pp:unit(" ")
 			end
@@ -1095,7 +1180,7 @@ function typed_term_override_pretty:pi(pp, context)
 	if not result_is_readable then
 		pp:any(param_type, context)
 	elseif param_is_tuple_type and result_is_destructure then
-		---@cast param_names string[]
+		---@cast param_names ArrayValue
 		---@cast param_members TupleDescFlat[]
 		if #param_members == 0 then
 			pp:unit(pp:_color())
@@ -1105,14 +1190,14 @@ function typed_term_override_pretty:pi(pp, context)
 			tuple_type_helper(pp, param_members, param_names)
 		end
 	elseif result_is_destructure then
-		---@cast param_names string[]
+		---@cast param_names ArrayValue
 		-- tuple_elim on params but params aren't a tuple type???
 		-- probably shouldn't happen, but here's a handler
 		pp:unit(pp:_color())
 		pp:unit("(")
 		pp:unit(pp:_resetcolor())
 
-		for i, name in ipairs(param_names) do
+		for i, name in param_names:ipairs() do
 			if i > 1 then
 				pp:unit(" ")
 			end
@@ -1196,7 +1281,7 @@ function typed_term_override_pretty:host_function_type(pp, context)
 	if not result_is_readable then
 		pp:any(param_type, context)
 	elseif param_is_tuple_type and result_is_destructure then
-		---@cast param_names string[]
+		---@cast param_names ArrayValue
 		---@cast param_members TupleDescFlat[]
 		if #param_members == 0 then
 			pp:unit(pp:_color())
@@ -1206,14 +1291,14 @@ function typed_term_override_pretty:host_function_type(pp, context)
 			tuple_type_helper(pp, param_members, param_names)
 		end
 	elseif result_is_destructure then
-		---@cast param_names string[]
+		---@cast param_names ArrayValue
 		-- tuple_elim on params but params aren't a tuple type???
 		-- probably shouldn't happen, but here's a handler
 		pp:unit(pp:_color())
 		pp:unit("(")
 		pp:unit(pp:_resetcolor())
 
-		for i, name in ipairs(param_names) do
+		for i, name in param_names:ipairs() do
 			if i > 1 then
 				pp:unit(" ")
 			end
@@ -1295,7 +1380,7 @@ function value_override_pretty:pi(pp)
 	if not result_is_readable then
 		pp:any(param_type)
 	elseif param_is_tuple_type and result_is_destructure then
-		---@cast param_names string[]
+		---@cast param_names ArrayValue
 		---@cast param_members TupleDescFlat[]
 		if #param_members == 0 then
 			pp:unit(pp:_color())
@@ -1305,14 +1390,14 @@ function value_override_pretty:pi(pp)
 			tuple_type_helper(pp, param_members, param_names)
 		end
 	elseif result_is_destructure then
-		---@cast param_names string[]
+		---@cast param_names ArrayValue
 		-- tuple_elim on params but params aren't a tuple type???
 		-- probably shouldn't happen, but here's a handler
 		pp:unit(pp:_color())
 		pp:unit("(")
 		pp:unit(pp:_resetcolor())
 
-		for i, name in ipairs(param_names) do
+		for i, name in param_names:ipairs() do
 			if i > 1 then
 				pp:unit(" ")
 			end
@@ -1394,7 +1479,7 @@ function value_override_pretty:host_function_type(pp)
 	if not result_is_readable then
 		pp:any(param_type)
 	elseif param_is_tuple_type and result_is_destructure then
-		---@cast param_names string[]
+		---@cast param_names ArrayValue
 		---@cast param_members TupleDescFlat[]
 		if #param_members == 0 then
 			pp:unit(pp:_color())
@@ -1404,14 +1489,14 @@ function value_override_pretty:host_function_type(pp)
 			tuple_type_helper(pp, param_members, param_names)
 		end
 	elseif result_is_destructure then
-		---@cast param_names string[]
+		---@cast param_names ArrayValue
 		-- tuple_elim on params but params aren't a tuple type???
 		-- probably shouldn't happen, but here's a handler
 		pp:unit(pp:_color())
 		pp:unit("(")
 		pp:unit(pp:_resetcolor())
 
-		for i, name in ipairs(param_names) do
+		for i, name in param_names:ipairs() do
 			if i > 1 then
 				pp:unit(" ")
 			end
@@ -1476,7 +1561,7 @@ function inferrable_term_override_pretty:application(pp, context)
 
 		-- print pretty on certain conditions, or fall back to apply()
 		if
-			(f_is_application or (f_is_typed and f_is_bound_variable and #context >= f_index))
+			(f_is_application or (f_is_typed and f_is_bound_variable and context:len() >= f_index))
 			and (arg:is_tuple_cons() or arg:is_host_tuple_cons())
 		then
 			if f_is_application then
@@ -1492,7 +1577,7 @@ function inferrable_term_override_pretty:application(pp, context)
 			pp:unit("(")
 			pp:unit(pp:_resetcolor())
 
-			for i, arg in ipairs(elements) do
+			for i, arg in elements:ipairs() do
 				if i > 1 then
 					pp:unit(pp:_color())
 					pp:unit(", ")
@@ -1557,7 +1642,7 @@ function typed_term_override_pretty:application(pp, context)
 
 		-- print pretty on certain conditions, or fall back to apply()
 		if
-			(f_is_application or (f_is_bound_variable and #context >= f_index))
+			(f_is_application or (f_is_bound_variable and context:len() >= f_index))
 			and (arg:is_tuple_cons() or arg:is_host_tuple_cons())
 		then
 			if f_is_application then
@@ -1573,7 +1658,7 @@ function typed_term_override_pretty:application(pp, context)
 			pp:unit("(")
 			pp:unit(pp:_resetcolor())
 
-			for i, arg in ipairs(elements) do
+			for i, arg in elements:ipairs() do
 				if i > 1 then
 					pp:unit(pp:_color())
 					pp:unit(", ")
@@ -1638,7 +1723,17 @@ function inferrable_term_override_pretty:tuple_type(pp, context)
 		---@cast members TupleDescFlat[]
 		tuple_type_helper(pp, members)
 	else
-		pp:unit("<UNHANDLED EDGE CASE>")
+		members = inferrable_tuple_type_hydraulicpress(desc)
+
+		for i, f in ipairs(members) do
+			if i > 1 then
+				pp:unit(pp:_color())
+				pp:unit(", ")
+				pp:unit(pp:_resetcolor())
+			end
+
+			pp:any(f, context)
+		end
 	end
 
 	pp:unit(pp:_color())
@@ -1665,7 +1760,17 @@ function inferrable_term_override_pretty:host_tuple_type(pp, context)
 		---@cast members TupleDescFlat[]
 		tuple_type_helper(pp, members)
 	else
-		pp:unit("<UNHANDLED EDGE CASE>")
+		members = inferrable_tuple_type_hydraulicpress(desc)
+
+		for i, f in ipairs(members) do
+			if i > 1 then
+				pp:unit(pp:_color())
+				pp:unit(", ")
+				pp:unit(pp:_resetcolor())
+			end
+
+			pp:any(f, context)
+		end
 	end
 
 	pp:unit(pp:_color())
@@ -1692,7 +1797,17 @@ function typed_term_override_pretty:tuple_type(pp, context)
 		---@cast members TupleDescFlat[]
 		tuple_type_helper(pp, members)
 	else
-		pp:unit("<UNHANDLED EDGE CASE>")
+		members = typed_tuple_type_hydraulicpress(desc)
+
+		for i, f in ipairs(members) do
+			if i > 1 then
+				pp:unit(pp:_color())
+				pp:unit(", ")
+				pp:unit(pp:_resetcolor())
+			end
+
+			pp:any(f, context)
+		end
 	end
 
 	pp:unit(pp:_color())
@@ -1719,7 +1834,17 @@ function typed_term_override_pretty:host_tuple_type(pp, context)
 		---@cast members TupleDescFlat[]
 		tuple_type_helper(pp, members)
 	else
-		pp:unit("<UNHANDLED EDGE CASE>")
+		members = typed_tuple_type_hydraulicpress(desc)
+
+		for i, f in ipairs(members) do
+			if i > 1 then
+				pp:unit(pp:_color())
+				pp:unit(", ")
+				pp:unit(pp:_resetcolor())
+			end
+
+			pp:any(f, context)
+		end
 	end
 
 	pp:unit(pp:_color())
@@ -1744,7 +1869,17 @@ function value_override_pretty:tuple_type(pp)
 		---@cast members TupleDescFlat[]
 		tuple_type_helper(pp, members)
 	else
-		pp:unit("<UNHANDLED EDGE CASE>")
+		members = value_tuple_type_hydraulicpress(desc)
+
+		for i, f in ipairs(members) do
+			if i > 1 then
+				pp:unit(pp:_color())
+				pp:unit(", ")
+				pp:unit(pp:_resetcolor())
+			end
+
+			pp:any(f)
+		end
 	end
 
 	pp:unit(pp:_color())
@@ -1769,7 +1904,17 @@ function value_override_pretty:host_tuple_type(pp)
 		---@cast members TupleDescFlat[]
 		tuple_type_helper(pp, members)
 	else
-		pp:unit("<UNHANDLED EDGE CASE>")
+		members = value_tuple_type_hydraulicpress(desc)
+
+		for i, f in ipairs(members) do
+			if i > 1 then
+				pp:unit(pp:_color())
+				pp:unit(", ")
+				pp:unit(pp:_resetcolor())
+			end
+
+			pp:any(f)
+		end
 	end
 
 	pp:unit(pp:_color())
@@ -1786,7 +1931,7 @@ function typed_term_override_pretty:tuple_element_access(pp, context)
 	context = ensure_context(context)
 	local subject_is_bound_variable, subject_index = subject:as_bound_variable()
 
-	if subject_is_bound_variable and #context >= subject_index then
+	if subject_is_bound_variable and context:len() >= subject_index then
 		pp:_enter()
 
 		pp:unit(context:get_name(subject_index))

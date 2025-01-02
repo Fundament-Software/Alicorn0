@@ -1,6 +1,5 @@
 local luaunit = require "luaunit"
 local format = require "format"
-local inspect = require "inspect"
 
 local function simplify_list(list)
 	if not list then
@@ -38,45 +37,25 @@ local function simplify_list(list)
 	end
 end
 
-local anchor_mt = {
-	__lt = function(fst, snd)
-		return snd.line > fst.line or (snd.line == fst.line and snd.char > fst.char)
-	end,
-	__le = function(fst, snd)
-		return fst < snd or fst == snd
-	end,
-	__eq = function(fst, snd)
-		return (snd.line == fst.line and snd.char == fst.char)
-	end,
-
-	__tostring = function(self)
-		return "in file " .. self.sourceid .. ", line " .. self.line .. " character " .. self.char
-	end,
-}
-
-local function create_anchor(line, char)
-	local anchor = {
-		char = char,
-		line = line,
-		sourceid = "inline",
-	}
-
-	setmetatable(anchor, anchor_mt)
-	return anchor
+local function create_anchor(line, char, sourceid)
+	if sourceid == nil then
+		sourceid = "inline"
+	end
+	return format.create_anchor(line, char, sourceid)
 end
 
-local function create_list(anchor, endpos, elements)
+local function create_list(start_anchor, end_anchor, elements)
 	return {
-		anchor = anchor,
-		endpos = endpos,
+		start_anchor = start_anchor,
+		end_anchor = end_anchor,
 		kind = "list",
 		elements = elements,
 	}
 end
 
-local function create_symbol(anchor, symbol)
+local function create_symbol(start_anchor, symbol)
 	return {
-		anchor = anchor,
+		start_anchor = start_anchor,
 		kind = "symbol",
 		str = symbol,
 	}
@@ -88,10 +67,10 @@ local function forward_moving_cursor(element, cursor)
 
 	if element.kind == "list" then
 		if not cursor then
-			cursor = element.anchor
+			cursor = element.start_anchor
 		else
-			if not (element.anchor >= cursor) then
-				-- print("failed, ", element.anchor, " >= ", cursor)
+			if not (element.start_anchor >= cursor) then
+				-- print("failed, ", element.start_anchor, " >= ", cursor)
 				return false
 			end
 		end
@@ -111,16 +90,16 @@ local function forward_moving_cursor(element, cursor)
 			cursor = newcursor
 		end
 
-		if not (element.endpos >= cursor) then
-			-- print("failed, ", element.endpos, " >= ", cursor)
+		if not (element.end_anchor >= cursor) then
+			-- print("failed, ", element.end_anchor, " >= ", cursor)
 			return false
 		end
-		cursor = element.endpos
+		cursor = element.end_anchor
 
 		return true, cursor
 	elseif element.kind == "literal" or element.kind == "symbol" or element.kind == "comment" then
-		-- print(element.anchor, " >= ", cursor, ", ", element.anchor >= cursor)
-		return element.anchor >= cursor, element.anchor
+		-- print(element.start_anchor, " >= ", cursor, ", ", element.start_anchor >= cursor)
+		return element.start_anchor >= cursor, element.start_anchor
 	end
 
 	return true, cursor
@@ -129,23 +108,37 @@ end
 local function samelength_testfile_list(text, ast)
 	local _, num_newlines = text:gsub("\n", "\n")
 
-	if not ((ast.endpos.line == num_newlines) or (ast.endpos.line == (num_newlines + 1))) then
-		print("ast: ", ast.endpos.line, "num_newlines:", num_newlines)
+	if not ((ast.end_anchor.line == num_newlines) or (ast.end_anchor.line == (num_newlines + 1))) then
+		print("ast: ", ast.end_anchor.line, "num_newlines:", num_newlines)
 	end
 	-- print(inspect(ast))
 
 	-- why is this even necessary??
-	return (ast.endpos.line == num_newlines) or (ast.endpos.line == (num_newlines + 1))
+	return (ast.end_anchor.line == num_newlines) or (ast.end_anchor.line == (num_newlines + 1))
 end
 
 local function compare_list_anchors(actual, expected)
 	if
-		(expected.anchor.line == actual.anchor.line and expected.anchor.char == actual.anchor.char)
-		and (expected.kind == actual.kind)
+		(
+			expected.start_anchor.line == actual.start_anchor.line
+			and expected.start_anchor.char == actual.start_anchor.char
+		) and (expected.kind == actual.kind)
 	then
 		if expected.kind == "list" then
-			if not (expected.endpos.line == actual.endpos.line and expected.endpos.char == actual.endpos.char) then
-				print("expected endpos: ", expected.endpos, expected.kind, " actual: ", actual.endpos, actual.kind)
+			if
+				not (
+					expected.end_anchor.line == actual.end_anchor.line
+					and expected.end_anchor.char == actual.end_anchor.char
+				)
+			then
+				print(
+					"expected end_anchor: ",
+					expected.end_anchor,
+					expected.kind,
+					" actual: ",
+					actual.end_anchor,
+					actual.kind
+				)
 				return false
 			end
 
@@ -157,7 +150,14 @@ local function compare_list_anchors(actual, expected)
 		end
 		return true
 	else
-		print("expected anchor: ", expected.anchor, expected.kind, " actual: ", actual.anchor, actual.kind)
+		print(
+			"expected start_anchor: ",
+			expected.start_anchor,
+			expected.kind,
+			" actual: ",
+			actual.start_anchor,
+			actual.kind
+		)
 		return false
 	end
 end
@@ -362,6 +362,9 @@ function testSymbols()
 		"str+str",
 		"_42",
 		"=303",
+		"-[_]/[_]->",
+		"[_][_]{_}",
+		"_[_]",
 	}
 
 	local expected = {
@@ -376,6 +379,9 @@ function testSymbols()
 		{ "str+str" },
 		{ "_42" },
 		{ "=303" },
+		{ "-[_]/[_]->" },
+		{ "[_][_]{_}" },
+		{ "_[_]" },
 	}
 
 	for i = 1, #example do
@@ -521,6 +527,8 @@ function testbracedlist()
 		"(hello (hi (another)) greetings)",
 		"(hello; (greetings;); anothertest)",
 		"(hello\n\tfailure \n\n\t\t\t\n\t\t(hi (another)) greetings)",
+		"a[b][c](d)",
+		"a -[b]/[c]-> d",
 	}
 
 	local expected = {
@@ -528,6 +536,8 @@ function testbracedlist()
 		{ { "hello", { "hi", { "another" } }, "greetings" } },
 		{ { { "hello" }, { { { "greetings" } } }, "anothertest" } },
 		{ { "hello", "failure", { "hi", { "another" } }, "greetings" } },
+		{ { { "_[_]", { "_[_]", "a", "b" }, "c" }, "d" } },
+		{ { "a", { "-[_]/[_]->", { "b" }, { "c" } }, "d" } },
 	}
 
 	for i = 1, #example do
@@ -541,31 +551,31 @@ end
 function testcomments()
 	local example = {
 		"1\n# list of one\n1",
-		"# i am a normal comment created by a normal human\n\tand this comment is intended to be useful\n\t\tsee?\n\n\tall of this is on one line ",
+		"#### i am a normal comment created by a normal human\n\tand this comment is intended to be useful\n\t\tsee?\n\n\tall of this is on one line ",
 		"# i",
 
 		"# comment A\ntoken",
-		"# comment B\n\ttoken",
-		"token\n# comment C\n\ttoken",
+		"#### comment B\n\ttoken",
+		"token\n#### comment C\n\ttoken",
 		"token\n\ttoken\n\t# comment D\n\ttoken",
-		"# comment G\n\t\ttoken",
-		"# comment H\n\t\t\ttoken",
-		"# comment I\n\ttoken\n\ttoken",
-		"# comment J\n\t\ttoken\n\ttoken",
-		"# comment K\n\t\ttoken\n\t\ttoken",
-		"# comment L\n\ttoken\n\t\ttoken",
+		"#### comment G\n\t\ttoken",
+		"#### comment H\n\t\t\ttoken",
+		"#### comment I\n\ttoken\n\ttoken",
+		"#### comment J\n\t\ttoken\n\ttoken",
+		"#### comment K\n\t\ttoken\n\t\ttoken",
+		"#### comment L\n\ttoken\n\t\ttoken",
 		"token\n\t# comment M\n\ttoken\n\t\ttoken",
 		"token\n\t# comment N\n\ttoken\ntoken",
-		"token\n\t# comment O\n\t\ttoken\ntoken",
-		"token\n\t# comment P\n\t\ttoken\n\ttoken",
-		"token\n\t# comment Q\n\t\ttoken\n\t\ttoken",
-		"token\n\t# comment R\n\t\ttoken\n\t\t\ttoken",
+		"token\n\t#### comment O\n\t\ttoken\ntoken",
+		"token\n\t#### comment P\n\t\ttoken\n\ttoken",
+		"token\n\t#### comment Q\n\t\ttoken\n\t\ttoken",
+		"token\n\t#### comment R\n\t\ttoken\n\t\t\ttoken",
 		"token # comment S1\ntoken",
 		"token # comment S2\n\ttoken",
 		"token # comment S3\n\ttoken\n\ttoken",
 		"token # comment S4\n\ttoken\n\t\ttoken",
 		"token # comment T# comment # comment",
-		'# comment U\n\t""""',
+		'#### comment U\n\t""""',
 
 		[[let (orig-results) = get-prim-func-res-inner(wrap(type, foo), prim-nil)
 let orig-results = unwrap(func-conv-res-type(oldargs), orig-results)
@@ -893,6 +903,49 @@ return mktype]],
 		luaunit.assertTrue(forward_moving_cursor(results))
 		luaunit.assertTrue(samelength_testfile_list(example[i], results))
 	end
+end
+
+function test_unformatter()
+	local filename = "testfile.alc"
+	local unformat = require "./unformatter"
+
+	local f = io.open(filename, "r")
+	if not f then
+		luaunit.fail(filename .. " does not exist")
+	end
+	f:close()
+
+	local src = ""
+	for line in io.lines("testfile.alc") do
+		src = src .. "\n" .. line
+	end
+
+	local function compare_lists(a, b)
+		assert(a.kind == "list")
+		assert(b.kind == "list")
+
+		for i = 1, #a.elements do
+			if not (a.elements[i].kind == b.elements[i].kind) then
+				print(a.elements[i].kind, b.elements[i].kind, i)
+				return false
+			end
+			if a.elements[i].kind == "list" then
+				if not compare_lists(a.elements[i], b.elements[i]) then
+					return false
+				end
+			end
+		end
+
+		return true
+	end
+
+	local formatted = format.parse(src, filename)
+
+	local unformatted = unformat.unformat(formatted)
+
+	local format_verify = format.parse(unformatted, filename)
+
+	luaunit.assertTrue(compare_lists(formatted, format_verify))
 end
 
 os.exit(luaunit.LuaUnit.run())

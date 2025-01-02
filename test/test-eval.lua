@@ -24,10 +24,10 @@ local function cons(...)
 end
 local empty = value.enum_value("empty", tup_val())
 
-local eval = require "../evaluator"
-local const_combinator = eval.const_combinator
-local infer = eval.infer
-local evaluate = eval.evaluate
+local evaluator = require "../evaluator"
+local const_combinator = evaluator.const_combinator
+local infer = evaluator.infer
+local evaluate = evaluator.evaluate
 
 print("PART ONE!!!!!!!!!!")
 
