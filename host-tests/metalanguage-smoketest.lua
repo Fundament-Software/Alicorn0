@@ -1,59 +1,14 @@
-local metalanguage = require "../metalanguage"
-local testlanguage = require "../testlanguage"
-local format = require "../test-format-adapter"
+local metalanguage = require "metalanguage"
+local exprs = require "alicorn-expressions"
+local format = require "format-adapter"
 
----@class Env
----@field dict { [any]: any }
-local Env = {}
-local env_mt
+local trie = require "lazy-prefix-tree"
+local environment = require "environment"
 
----@param name any
----@return any
-function Env:get(name)
-	return self.dict[name]
-end
-
-function Env:without(name)
-	local res = {}
-	for k, v in pairs(self.dict) do
-		if k ~= name then
-			res[k] = v
-		end
-	end
-	return setmetatable({ dict = res }, env_mt)
-end
-
-env_mt = {
-	__add = function(self, other)
-		local res = {}
-		for k, v in pairs(self.dict) do
-			res[k] = v
-		end
-		for k, v in pairs(other.dict) do
-			if res[k] ~= nil then
-				error("names in environments being merged must be disjoint, but both environments have " .. k)
-			end
-			res[k] = v
-		end
-		return setmetatable({ dict = res }, env_mt)
-	end,
-	__index = Env,
-	__tostring = function(self)
-		local message = "env{"
-		local fields = {}
-		for k, v in pairs(self.dict) do
-			fields[#fields + 1] = tostring(k) .. " = " .. tostring(v)
-		end
-		message = message .. table.concat(fields, ", ") .. "}"
-		return message
-	end,
-}
-
----@param dict any
----@return Env
-local function newenv(dict)
-	return setmetatable({ dict = dict }, env_mt)
-end
+local terms = require "terms"
+local terms_gen = require "terms-generators"
+local number = terms.value.host_number_type
+local unit = terms.inferrable_term.tuple_cons(terms_gen.declare_array(terms.inferrable_term)())
 
 -- for k, v in pairs(lang) do print(k, v) end
 
@@ -73,7 +28,7 @@ local code = format.read(src, "inline")
 
 local function do_block_pair_handler(env, a, b)
 	local ok, val, newenv = a:match({
-		testlanguage.evaluates(metalanguage.accept_handler, env),
+		exprs.inferred_expression(metalanguage.accept_handler, env),
 	}, metalanguage.failure_handler, nil)
 	if not ok then
 		return false, val
@@ -83,12 +38,14 @@ local function do_block_pair_handler(env, a, b)
 end
 
 local function do_block_nil_handler(env)
-	return true, false
+	return true, false, nil, env, nil
 end
 
 local function do_block(syntax, env)
 	local res = nil
 	local ok, ispair, val, newenv, tail = true, true, nil, env, nil
+	local shadowed
+	shadowed, env = env:enter_block(terms.block_purity.pure)
 	while ok and ispair do
 		ok, ispair, val, newenv, tail = syntax:match({
 			metalanguage.ispair(do_block_pair_handler),
@@ -103,6 +60,8 @@ local function do_block(syntax, env)
 			syntax = tail
 		end
 	end
+	env = newenv
+	env, res = env:exit_block(res, shadowed)
 	return true, res, env
 end
 
@@ -112,25 +71,32 @@ local function val_bind(syntax, env)
 			metalanguage.accept_handler,
 			metalanguage.issymbol(metalanguage.accept_handler),
 			metalanguage.symbol_exact(metalanguage.accept_handler, "="),
-			testlanguage.evaluates(metalanguage.accept_handler, env)
+			exprs.inferred_expression(metalanguage.accept_handler, env)
 		),
 	}, metalanguage.failure_handler, nil)
 	--print("val bind", ok, name, _, val)
 	if not ok then
 		return false, symbol.str
 	end
-	return true, value(nil), env + newenv { [symbol.str] = val }
+	return true, unit, env:bind_local(terms.binding.let(symbol.str, val))
 end
 
-local env = newenv {
-	["+"] = testlanguage.primitive_applicative(function(a, b)
+local base_env = {
+	["+"] = exprs.host_applicative(function(a, b)
 		return a + b
-	end),
-	["do"] = testlanguage.primitive_operative(do_block),
-	val = testlanguage.primitive_operative(val_bind),
+	end, { number, number }, { number }),
+	["do"] = exprs.host_operative(do_block, "do_block"),
+	val = exprs.host_operative(val_bind, "val_bind"),
+}
+local env = environment.new_env {
+	nonlocals = trie.build(base_env),
 }
 
-local ok, res = testlanguage.eval(code, env)
+local ok, res = code:match(
+	{ exprs.block(metalanguage.accept_handler, exprs.ExpressionArgs.new(terms.expression_goal.infer, env)) },
+	metalanguage.failure_handler,
+	nil
+)
 
 print(ok, res)
 

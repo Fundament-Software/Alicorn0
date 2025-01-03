@@ -906,7 +906,7 @@ return mktype]],
 end
 
 function test_unformatter()
-	local filename = "testfile.alc"
+	local filename = "prelude.alc"
 	local unformat = require "./unformatter"
 
 	local f = io.open(filename, "r")
@@ -916,7 +916,7 @@ function test_unformatter()
 	f:close()
 
 	local src = ""
-	for line in io.lines("testfile.alc") do
+	for line in io.lines("prelude.alc") do
 		src = src .. "\n" .. line
 	end
 
