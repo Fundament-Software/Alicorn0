@@ -1,7 +1,7 @@
-local evaluator = require "../evaluator"
-local format = require "../format-adapter"
-local base_env = require "../base-env"
-local types = require "../typesystem"
+local evaluator = require "evaluator"
+local format = require "format-adapter"
+local base_env = require "base-env"
+local types = require "typesystem"
 
 local src = "do (val x = 6) (+ x 3)"
 print("read code")

@@ -907,7 +907,7 @@ end
 
 function test_unformatter()
 	local filename = "prelude.alc"
-	local unformat = require "./unformatter"
+	local unformat = require "unformatter"
 
 	local f = io.open(filename, "r")
 	if not f then

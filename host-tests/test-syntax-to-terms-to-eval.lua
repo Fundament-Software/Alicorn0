@@ -1,13 +1,13 @@
-local terms = require "../terms"
-local exprs = require "../alicorn-expressions"
+local terms = require "terms"
+local exprs = require "alicorn-expressions"
 
-local metalanguage = require "../metalanguage"
-local format = require "../format-adapter"
-local gen = require "../terms-generators"
-local evaluator = require "../evaluator"
-local environment = require "../environment"
+local metalanguage = require "metalanguage"
+local format = require "format-adapter"
+local gen = require "terms-generators"
+local evaluator = require "evaluator"
+local environment = require "environment"
 --local p = require "pretty-print".prettyPrint
-local trie = require "../lazy-prefix-tree"
+local trie = require "lazy-prefix-tree"
 
 local src = "+ 621 926" -- fs.readFileSync("testfile.alc")
 local code = format.read(src, "inline")
