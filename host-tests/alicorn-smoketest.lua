@@ -1,4 +1,4 @@
-local evaluator = require "alicorn-evaluator"
+local evaluator = require "evaluator"
 local format = require "format-adapter"
 local base_env = require "base-env"
 local types = require "typesystem"
@@ -8,7 +8,6 @@ print("read code")
 print(src)
 print("parsing code")
 local code = format.read(src, "inline")
--- p(code)
 
 local env = base_env.create()
 

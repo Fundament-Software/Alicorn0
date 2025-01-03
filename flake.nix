@@ -24,13 +24,14 @@
           self = luajit;
           enable52Compat = true;
         };
+        luajitWithPackages = luajit.withPackages (ps: with ps; [ luasocket lpeg inspect luaunit tl lqc ]);
         alicorn-check = file:
           pkgs.runCommandNoCC "alicorn-check-${file}" { } ''
             set -euo pipefail
             cd ${./.}
             mkdir $out
             >&2 echo "Checking ${file}"
-            ${pkgs.lib.getExe' luvitpkgs.packages.${system}.luvit "luvit"} ${file}
+            ${pkgs.lib.getExe' luvitpkgs.packages.${system}.luvit "luvit"} host-tests/${file}.lua
           '';
 
         lqc = luajit.pkgs.buildLuarocksPackage rec {
@@ -61,8 +62,8 @@
           default = hello;
         };
         checks = {
-          terms = alicorn-check "test-terms.lua";
-          derive-pretty-print = alicorn-check "test-derive-pretty-print.lua";
+          terms = alicorn-check "test-terms";
+          derive-pretty-print = alicorn-check "test-derive-pretty-print";
           formatting = pkgs.runCommandNoCC "stylua-check" { } ''
             cd ${./.}
             mkdir $out
@@ -109,11 +110,10 @@
 
               })
 
-              (luajit.withPackages
-                (ps: with ps; [ luasocket lpeg inspect luaunit tl lqc ]))
+              luajitWithPackages
             ];
             shellHook = self.checks.${system}.pre-commit-check.shellHook + ''
-              export LUA_PATH='${luajit}/share/lua/5.1/?.lua;./?.lua'
+              export LUA_PATH='${luajitWithPackages}/share/lua/5.1/?.lua;./?.lua'
             '';
           };
           default = alicorn;

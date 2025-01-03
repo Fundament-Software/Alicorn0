@@ -196,7 +196,7 @@ local result_2 = app(prim_add, t) -- add(5, -1) -> 4
 local result_3 = typed_term.tuple_elim(result_2, 1, var(1))
 eval_test("repacking_tuples", result_3)
 
--- local fmt = require "format-adapter"
+-- local fmt = require 'format-adapter'
 -- local user_defined_prim_a_id = { name = "syntax" }
 -- local user_defined_prim_a_cons = inferrable_term.prim_user_defined_type_cons(user_defined_prim_a_id, inferrable_array())
 -- local value_user_defined_prim_a = infer_and_eval("syn_prim_cons", user_defined_prim_a_cons)
