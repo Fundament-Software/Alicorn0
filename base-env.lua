@@ -6,6 +6,7 @@ local exprs = require "alicorn-expressions"
 local terms = require "terms"
 local gen = require "terms-generators"
 local evaluator = require "evaluator"
+local U = require "alicorn-utils"
 
 local value = terms.value
 local typed = terms.typed_term
@@ -30,7 +31,7 @@ end
 
 ---handle a let binding
 ---@type lua_operative
-local function let_bind(syntax, env)
+local function let_impl(syntax, env)
 	local ok, name, tail = syntax:match({
 		metalanguage.listtail(
 			metalanguage.accept_handler,
@@ -67,7 +68,7 @@ local function let_bind(syntax, env)
 
 	if not env or not env.get then
 		p(env)
-		error("env in let_bind isn't an env")
+		error("env in let_impl isn't an env")
 	end
 
 	if not name["kind"] then
@@ -93,6 +94,122 @@ local function let_bind(syntax, env)
 			terms.typed_term.literal(terms.unit_val)
 		),
 		env
+end
+
+---@type lua_operative
+local function mk_impl(syntax, env)
+	local ok, bun = syntax:match({
+		metalanguage.listmatch(
+			metalanguage.accept_handler,
+			metalanguage.listtail(utils.accept_bundled, metalanguage.issymbol(metalanguage.accept_handler))
+		),
+		metalanguage.listtail(utils.accept_bundled, metalanguage.issymbol(metalanguage.accept_handler)),
+	}, metalanguage.failure_handler, nil)
+	if not ok then
+		return ok, bun
+	end
+	local name, tail = utils.unpack_bundle(bun)
+	local tuple
+	ok, tuple, env = tail:match({
+		exprs.collect_tuple(metalanguage.accept_handler, exprs.ExpressionArgs.new(terms.expression_goal.infer, env)),
+	}, metalanguage.failure_handler, nil)
+	if not ok then
+		return ok, tuple
+	end
+	return ok, terms.inferrable_term.enum_cons(name.str, tuple), env
+end
+
+---@type Matcher
+local switch_case_header_matcher = metalanguage.listtail(
+	metalanguage.accept_handler,
+	metalanguage.oneof(
+		metalanguage.accept_handler,
+		metalanguage.issymbol(utils.accept_bundled),
+		metalanguage.list_many(metalanguage.accept_handler, metalanguage.issymbol(metalanguage.accept_handler))
+	),
+	metalanguage.symbol_exact(metalanguage.accept_handler, "->")
+)
+
+---@param ... SyntaxSymbol
+---@return ...
+local function unwrap_into_string(...)
+	local args = { ... }
+	for i, v in ipairs(args) do
+		args[i] = v.str
+	end
+	return unpack(args)
+end
+
+---@param env Environment
+local switch_case = metalanguage.reducer(function(syntax, env)
+	local ok, tag, tail = syntax:match({ switch_case_header_matcher }, metalanguage.failure_handler, nil)
+	if not ok then
+		return ok, tag
+	end
+
+	local names = gen.declare_array(gen.builtin_string)(unwrap_into_string(table.unpack(tag, 2)))
+	tag = tag[1]
+
+	if not tag then
+		return false, "missing case tag"
+	end
+	local singleton_contents
+	ok, singleton_contents = tail:match({
+		metalanguage.listmatch(metalanguage.accept_handler, metalanguage.any(metalanguage.accept_handler)),
+	}, metalanguage.failure_handler, nil)
+	if ok then
+		tail = singleton_contents
+	end
+	--TODO rewrite this to use an environment-splitting operation
+	env = environment.new_env(env, {
+		typechecking_context = env.typechecking_context:append(
+			"#switch-subj",
+			evaluator.typechecker_state:metavariable(env.typechecking_context):as_value(),
+			nil,
+			syntax.start_anchor
+		),
+	})
+	local shadowed, term
+	shadowed, env = env:enter_block(terms.block_purity.inherit)
+	env = env:bind_local(
+		terms.binding.tuple_elim(names, terms.inferrable_term.bound_variable(env.typechecking_context:len()))
+	)
+	ok, term, env = tail:match({
+		exprs.inferred_expression(metalanguage.accept_handler, env),
+	}, metalanguage.failure_handler, nil)
+	if not ok then
+		return ok, term
+	end
+	env, term = env:exit_block(term, shadowed)
+	term.start_anchor = syntax.start_anchor --TODO figure out where to store/retrieve the anchors correctly
+	term.end_anchor = syntax.end_anchor
+	return ok, tag, term, env
+end, "switch_case")
+
+---@type lua_operative
+local function switch_impl(syntax, env)
+	local ok, subj
+	ok, subj, syntax = syntax:match({
+		metalanguage.listtail(metalanguage.accept_handler, exprs.inferred_expression(utils.accept_bundled, env)),
+	}, metalanguage.failure_handler, nil)
+	if not ok then
+		return ok, subj
+	end
+	subj, env = table.unpack(subj)
+	local variants = gen.declare_map(gen.builtin_string, terms.inferrable_term)()
+	while not syntax:match({ metalanguage.isnil(metalanguage.accept_handler) }, metalanguage.failure_handler, nil) do
+		local tag, term
+		ok, tag, syntax = syntax:match({
+			metalanguage.listtail(metalanguage.accept_handler, switch_case(utils.accept_bundled, env)),
+		}, metalanguage.failure_handler, nil)
+		if not ok then
+			return ok, tag
+		end
+		--TODO rewrite this to collect the branch envs and join them back together:
+		tag, term = table.unpack(tag)
+		variants:set(tag.str, term)
+	end
+	return true, terms.inferrable_term.enum_case(subj, variants), env
 end
 
 ---@param _ any
@@ -133,7 +250,7 @@ local function record_build(syntax, env)
 end
 
 ---@type lua_operative
-local function intrinsic(syntax, env)
+local function intrinsic_impl(syntax, env)
 	local ok, str_env, syntax = syntax:match({
 		metalanguage.listtail(
 			metalanguage.accept_handler,
@@ -1476,9 +1593,11 @@ local core_operations = {
 	--end, types.tuple {types.number, types.number}, types.cotuple({types.unit, types.unit})),
 
 	--["do"] = evaluator.host_operative(do_block),
-	let = exprs.host_operative(let_bind, "let_bind"),
-	record = exprs.host_operative(record_build, "record_build"),
-	intrinsic = exprs.host_operative(intrinsic, "intrinsic"),
+	let = exprs.host_operative(let_impl, "let_impl"),
+	mk = exprs.host_operative(mk_impl, "mk_impl"),
+	switch = exprs.host_operative(switch_impl, "switch_impl"),
+	--record = exprs.host_operative(record_build, "record_build"),
+	intrinsic = exprs.host_operative(intrinsic_impl, "intrinsic_impl"),
 	["host-number"] = lit_term(value.host_number_type, value.host_type_type),
 	["host-type"] = lit_term(value.host_type_type, value.star(1, 1)),
 	["host-func-type"] = exprs.host_operative(make_host_func_syntax(false), "host_func_type_impl"),
