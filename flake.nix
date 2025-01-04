@@ -25,13 +25,29 @@
           enable52Compat = true;
         };
         luajitWithPackages = luajit.withPackages (ps: with ps; [ luasocket lpeg inspect luaunit tl lqc ]);
-        alicorn-check = file:
-          pkgs.runCommandNoCC "alicorn-check-${file}" { } ''
+        alicorn-host-check =
+          pkgs.runCommandNoCC "alicorn-host-check" { } ''
             set -euo pipefail
             cd ${./.}
             mkdir $out
-            >&2 echo "Checking ${file}"
-            ${pkgs.lib.getExe' luvitpkgs.packages.${system}.luvit "luvit"} host-tests/${file}.lua
+            useLuajit () (
+              case $1 in
+                (*/test-pretty-print.lua|*/test.lua)
+                  exit 0
+                  ;;
+                (*)
+                  exit 1
+                  ;;
+              esac
+            )
+            for file in host-tests/*.lua
+            do
+              >&2 printf "\033[1;4mChecking $file\033[0m\n"
+              if useLuajit "$file"
+              then ${pkgs.lib.getExe' luajitWithPackages "luajit"} "$file"
+              else ${pkgs.lib.getExe' luvitpkgs.packages.${system}.luvit "luvit"} "$file"
+              fi
+            done
           '';
 
         lqc = luajit.pkgs.buildLuarocksPackage rec {
@@ -62,8 +78,7 @@
           default = hello;
         };
         checks = {
-          terms = alicorn-check "test-terms";
-          derive-pretty-print = alicorn-check "test-derive-pretty-print";
+          inherit alicorn-host-check;
           formatting = pkgs.runCommandNoCC "stylua-check" { } ''
             cd ${./.}
             mkdir $out
