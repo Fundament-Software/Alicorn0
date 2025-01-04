@@ -98,6 +98,9 @@ local ok, res = code:match(
 	nil
 )
 
-print(ok, res)
-
-print(res[1])
+if ok then
+	print(res)
+	print("Success!")
+else
+	error(res)
+end
