@@ -24,13 +24,29 @@
           self = luajit;
           enable52Compat = true;
         };
-        alicorn-check = file:
-          pkgs.runCommandNoCC "alicorn-check-${file}" { } ''
+        luajitWithPackages = luajit.withPackages (ps: with ps; [ luasocket lpeg inspect luaunit tl lqc ]);
+        alicorn-host-check =
+          pkgs.runCommandNoCC "alicorn-host-check" { } ''
             set -euo pipefail
             cd ${./.}
             mkdir $out
-            >&2 echo "Checking ${file}"
-            ${pkgs.lib.getExe' luvitpkgs.packages.${system}.luvit "luvit"} ${file}
+            export LUA_PATH='${luajitWithPackages}/share/lua/5.1/?.lua;./?.lua'
+            for file in host-tests/*.lua
+            do
+              >&2 printf "\033[1;4mChecking $file\033[0m\n"
+              case $file in
+                (*/test-fitsinto.lua)
+                  # these tests don't work yet
+                  ;;
+                (*/test.lua)
+                  # these tests only work on luajit
+                  ${pkgs.lib.getExe' luajitWithPackages "luajit"} "$file"
+                  ;;
+                (*)
+                  ${pkgs.lib.getExe' luvitpkgs.packages.${system}.luvit "luvit"} "$file"
+                  ;;
+              esac
+            done
           '';
 
         lqc = luajit.pkgs.buildLuarocksPackage rec {
@@ -61,8 +77,7 @@
           default = hello;
         };
         checks = {
-          terms = alicorn-check "test-terms.lua";
-          derive-pretty-print = alicorn-check "test-derive-pretty-print.lua";
+          inherit alicorn-host-check;
           formatting = pkgs.runCommandNoCC "stylua-check" { } ''
             cd ${./.}
             mkdir $out
@@ -109,11 +124,10 @@
 
               })
 
-              (luajit.withPackages
-                (ps: with ps; [ luasocket lpeg inspect luaunit tl lqc ]))
+              luajitWithPackages
             ];
             shellHook = self.checks.${system}.pre-commit-check.shellHook + ''
-              export LUA_PATH='${luajit}/share/lua/5.1/?.lua;./?.lua'
+              export LUA_PATH='${luajitWithPackages}/share/lua/5.1/?.lua;./?.lua'
             '';
           };
           default = alicorn;

@@ -11,76 +11,74 @@ typed:define_enum("typed", {
 local map_string_typed = map(gen.builtin_string, typed)
 local stuff = map_string_typed()
 local funvalue = typed.recordcons(stuff)
-p(funvalue)
+--p(funvalue)
 
 local stuff2 = map_string_typed()
 stuff2:set("foo", funvalue)
 local funvalue2 = typed.recordcons(stuff2)
-p(funvalue2)
+--p(funvalue2)
 
 for k, v in pairs(funvalue2.fields) do
-	p(k, v)
+	--p(k, v)
+	assert(k == "foo")
+	assert(v == funvalue)
 end
 
-function fail1()
+local function runfail(f)
+	print("start debug")
+	local success, err = pcall(f)
+	print("end debug")
+	assert(not success)
+	--p(err)
+end
+
+runfail(function()
 	stuff2:set(2, funvalue)
-end
-local success_1, err_1 = pcall(fail1)
-assert(not success_1)
-p(err_1)
-function fail2()
+end)
+runfail(function()
 	stuff2:set("bar", "baz")
-end
-local success_2, err_2 = pcall(fail2)
-assert(not success_2)
-p(err_2)
-function fail3()
+end)
+runfail(function()
 	stuff2:set("foo", "quux")
-end
-local success_3, err_3 = pcall(fail3)
-assert(not success_3)
-p(err_3)
+end)
 
 local array_typed = array(typed)
 local athing = array_typed()
 athing:append(funvalue)
 athing[2] = funvalue2
 local funvalue3 = typed.tuplecons(athing)
-p(funvalue3)
+--p(funvalue3)
 assert(#funvalue3.methods == 2)
 
 for i, v in ipairs(funvalue3.methods) do
-	p(i, v)
+	--p(i, v)
+	if i == 1 then
+		assert(v == funvalue)
+	elseif i == 2 then
+		assert(v == funvalue2)
+	else
+		error("bad")
+	end
 end
 
 local athing2 = array_typed(funvalue, funvalue2)
-p(athing2)
+--p(athing2)
 assert(#athing2 == 2)
 athing2[1] = funvalue2
-p(athing2)
+--p(athing2)
 assert(#athing2 == 2)
 
-function fail4()
+runfail(function()
 	athing["lol"] = funvalue
-end
-local success_4, err_4 = pcall(fail4)
-assert(not success_4)
-p(err_4)
-function fail5()
+end)
+runfail(function()
 	athing[2] = "ping"
-end
-local success_5, err_5 = pcall(fail5)
-assert(not success_5)
-p(err_5)
-function fail6()
+end)
+runfail(function()
 	athing[0] = "pong"
-end
-local success_6, err_6 = pcall(fail6)
-assert(not success_6)
-p(err_6)
-function fail7()
+end)
+runfail(function()
 	athing[69] = "nice"
-end
-local success_7, err_7 = pcall(fail7)
-assert(not success_7)
-p(err_7)
+end)
+
+print("Success!")

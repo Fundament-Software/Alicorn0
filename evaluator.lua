@@ -1185,7 +1185,12 @@ end)
 ---@return boolean
 ---@return (string|ConcreteFail)?
 function check_concrete(lctx, val, rctx, use)
-	assert(val and use, "nil value or usage passed into check_concrete!")
+	if not val then
+		error("nil value passed into check_concrete!")
+	end
+	if not use then
+		error("nil usage passed into check_concrete!")
+	end
 
 	if val:is_neutral() then
 		if use:is_neutral() then
@@ -1937,7 +1942,7 @@ function infer(
 				substitute_type_variables(field_type, typechecking_context:len() + 1)
 			)
 			add_arrays(usages, field_usages)
-			new_fields[k] = field_term
+			new_fields:set(k, field_term)
 		end
 		return value.record_type(type_data), usages, typed_term.record_cons(new_fields)
 	elseif inferrable_term:is_record_elim() then
@@ -1957,7 +1962,7 @@ function infer(
 			function make_prefix(field_names)
 				local prefix_fields = string_value_map()
 				for _, v in field_names:ipairs() do
-					prefix_fields[v] = subject_fields[v]
+					prefix_fields:set(v, subject_fields[v])
 				end
 				return value.record_value(prefix_fields)
 			end
@@ -1966,7 +1971,7 @@ function infer(
 			function make_prefix(field_names)
 				local prefix_fields = string_value_map()
 				for _, v in field_names:ipairs() do
-					prefix_fields[v] = value.neutral(neutral_value.record_field_access_stuck(subject_neutral, v))
+					prefix_fields:set(v, value.neutral(neutral_value.record_field_access_stuck(subject_neutral, v)))
 				end
 				return value.record_value(prefix_fields)
 			end
@@ -1987,7 +1992,7 @@ function infer(
 				local prefix = make_prefix(field_names)
 				local field_type = apply_value(f, prefix)
 				field_names:append(name)
-				field_types[name] = field_type
+				field_types:set(name, field_type)
 				return field_names, field_types
 			else
 				error("infer: unknown tuple type data constructor")
@@ -2524,7 +2529,7 @@ function evaluate(typed_term, runtime_context)
 		local fields = typed_term:unwrap_record_cons()
 		local new_fields = string_value_map()
 		for k, v in pairs(fields) do
-			new_fields[k] = U.tag("evaluate", { ["record_field_" .. tostring(k)] = v }, evaluate, v, runtime_context)
+			new_fields:set(k, U.tag("evaluate", { ["record_field_" .. tostring(k)] = v }, evaluate, v, runtime_context))
 		end
 		return value.record_value(new_fields)
 	elseif typed_term:is_record_elim() then
@@ -3106,7 +3111,9 @@ local function IndexedCollection(indices)
 				)
 			end
 			local args = { ... }
-			assert(#args == #v, "Must have one argument per key extractor")
+			if #args ~= #v then
+				error("Must have one argument per key extractor")
+			end
 
 			local store = self._index_store[k]
 			for i = 1, #v do
@@ -3145,7 +3152,9 @@ local function IndexedCollection(indices)
 				for j = curlevel + 1, level do
 					store = U.shadowarray(store)
 				end
-				assert(U.getshadowdepth(store) == level, "Improper shadowing happened!")
+				if U.getshadowdepth(store) ~= level then
+					error("Improper shadowing happened!")
+				end
 			end
 			U.append(store, obj)
 			return store
@@ -3157,7 +3166,9 @@ local function IndexedCollection(indices)
 			for j = curlevel + 1, level do
 				store = U.shadowtable(store)
 			end
-			assert(U.getshadowdepth(store) == level, "Improper shadowing happened!")
+			if U.getshadowdepth(store) ~= level then
+				error("Improper shadowing happened!")
+			end
 		end
 		-- Note: it might be *slightly* more efficient to only reassign if the returned table is different, but the commit
 		-- only copies completely new keys anyway so it doesn't really matter.
@@ -3229,7 +3240,9 @@ local function IndexedCollection(indices)
 	---@param n table
 	local function commit_tree_node(n)
 		setmetatable(n, nil)
-		assert(type(n) == "table")
+		if type(n) ~= "table" then
+			error("n must be a table")
+		end
 		local base = rawget(n, "__shadow")
 		if base then
 			for k, v in pairs(n) do
@@ -3584,8 +3597,12 @@ end
 ---@param shallowest_block integer
 ---@return boolean
 function Reachability:add_constrain_edge(left, right, rel, shallowest_block)
-	assert(type(left) == "number", "left isn't an integer!")
-	assert(type(right) == "number", "right isn't an integer!")
+	if type(left) ~= "number" then
+		error("left isn't an integer!")
+	end
+	if type(right) ~= "number" then
+		error("right isn't an integer!")
+	end
 
 	for _, edge in ipairs(self.constrain_edges:between(left, right)) do
 		if edge.rel ~= rel then
@@ -3615,8 +3632,12 @@ end
 ---@param shallowest_block integer
 ---@return boolean
 function Reachability:add_call_left_edge(left, arg, rel, right, shallowest_block)
-	assert(type(left) == "number", "left isn't an integer!")
-	assert(type(right) == "number", "right isn't an integer!")
+	if type(left) ~= "number" then
+		error("left isn't an integer!")
+	end
+	if type(right) ~= "number" then
+		error("right isn't an integer!")
+	end
 
 	for _, edge in ipairs(self.leftcall_edges:between(left, right)) do
 		if rel == edge.rel and arg == edge.arg then
@@ -3644,8 +3665,12 @@ end
 ---@param shallowest_block integer
 ---@return boolean
 function Reachability:add_call_right_edge(left, rel, right, arg, shallowest_block)
-	assert(type(left) == "number", "left isn't an integer!")
-	assert(type(right) == "number", "right isn't an integer!")
+	if type(left) ~= "number" then
+		error("left isn't an integer!")
+	end
+	if type(right) ~= "number" then
+		error("right isn't an integer!")
+	end
 
 	for _, edge in ipairs(self.rightcall_edges:between(left, right)) do
 		if rel == edge.rel and arg == edge.arg then
@@ -3766,8 +3791,12 @@ end
 function TypeCheckerState:queue_subtype(lctx, val, rctx, use, cause)
 	local l = U.tag("check_value", { val = val, use = use }, self.check_value, self, val, TypeCheckerTag.VALUE, lctx)
 	local r = U.tag("check_value", { val = val, use = use }, self.check_value, self, use, TypeCheckerTag.USAGE, rctx)
-	assert(type(l) == "number", "l isn't number, instead found " .. tostring(l))
-	assert(type(r) == "number", "r isn't number, instead found " .. tostring(r))
+	if type(l) ~= "number" then
+		error("l isn't number, instead found " .. tostring(l))
+	end
+	if type(r) ~= "number" then
+		error("r isn't number, instead found " .. tostring(r))
+	end
 	U.append(self.pending, EdgeNotif.Constrain(l, UniverseOmegaRelation, r, self.block_level, cause))
 end
 
@@ -3780,8 +3809,12 @@ end
 function TypeCheckerState:queue_constrain(lctx, val, rel, rctx, use, cause)
 	local l = U.tag("check_value", { val = val, use = use }, self.check_value, self, val, TypeCheckerTag.VALUE, lctx)
 	local r = U.tag("check_value", { val = val, use = use }, self.check_value, self, use, TypeCheckerTag.USAGE, rctx)
-	assert(type(l) == "number", "l isn't number, instead found " .. tostring(l))
-	assert(type(r) == "number", "r isn't number, instead found " .. tostring(r))
+	if type(l) ~= "number" then
+		error("l isn't number, instead found " .. tostring(l))
+	end
+	if type(r) ~= "number" then
+		error("r isn't number, instead found " .. tostring(r))
+	end
 	U.append(self.pending, EdgeNotif.Constrain(l, rel, r, self.block_level, cause))
 end
 
@@ -3804,15 +3837,21 @@ end
 ---@param context TypecheckingContext
 ---@return NodeID
 function TypeCheckerState:check_value(v, tag, context)
-	assert(v, "nil passed into check_value!")
+	if not v then
+		error("nil passed into check_value!")
+	end
 
 	if v:is_neutral() and v:unwrap_neutral():is_free() and v:unwrap_neutral():unwrap_free():is_metavariable() then
 		local mv = v:unwrap_neutral():unwrap_free():unwrap_metavariable()
 		if tag == TypeCheckerTag.VALUE then
-			assert(mv.value ~= nil)
+			if mv.value == nil then
+				error("wtf")
+			end
 			return mv.value
 		else
-			assert(mv.usage ~= nil)
+			if mv.usage == nil then
+				error("wtf")
+			end
 			return mv.usage
 		end
 	end
@@ -4108,8 +4147,15 @@ end
 ---@return boolean
 ---@return ...
 function TypeCheckerState:constrain(val, val_context, use, use_context, rel, cause)
-	assert(val and use, "empty val or use passed into constrain!")
-	assert(#self.pending == 0, "pending not empty at start of constrain!")
+	if not val then
+		error("empty val passed into constrain!")
+	end
+	if not use then
+		error("empty use passed into constrain!")
+	end
+	if #self.pending ~= 0 then
+		error("pending not empty at start of constrain!")
+	end
 	--TODO: add contexts to queue_work if appropriate
 	--self:queue_work(val, val_context, use, use_context, cause)
 
@@ -4162,8 +4208,9 @@ function TypeCheckerState:constrain(val, val_context, use, use_context, rel, cau
 		end
 	end
 
-	--assert(self:DEBUG_VERIFY(), "VERIFICATION FAILED")
-	assert(#self.pending == 0, "pending was not drained!")
+	if #self.pending ~= 0 then
+		error("pending was not drained!")
+	end
 	return true
 end
 

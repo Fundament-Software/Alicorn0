@@ -1282,7 +1282,9 @@ local block = metalanguage.reducer(
 	---@return Environment?
 	function(syntax, args)
 		local goal, env = args:unwrap()
-		assert(goal:is_infer(), "NYI non-infer cases for block")
+		if not goal:is_infer() then
+			error("NYI non-infer cases for block")
+		end
 		local lastval = inferrable_term.tuple_cons(inferrable_array())
 		local newval
 		local ok, continue = true, true
@@ -1388,7 +1390,7 @@ local top_level_block = metalanguage.reducer(
 -- example usage of primitive_applicative
 -- add(a, b) = a + b ->
 -- local prim_num = terms.value.prim_number_type
--- primitive_applicative(function(a, b) return a + b end, {prim_num, prim_num}, {prim_num}),
+-- host_applicative(function(a, b) return a + b end, {prim_num, prim_num}, {prim_num}),
 
 ---@param elems value[]
 ---@return value
@@ -1408,8 +1410,15 @@ end
 ---@return inferrable
 local function host_applicative(fn, params, results)
 	local literal_host_fn = terms.typed_term.literal(terms.value.host_value(fn))
-	local host_fn_type =
-		terms.value.host_function_type(build_host_type_tuple(params), build_host_type_tuple(results), result_info_pure)
+	local host_fn_type = terms.value.host_function_type(
+		build_host_type_tuple(params),
+		terms.value.closure(
+			"#hostap-params",
+			terms.typed_term.literal(build_host_type_tuple(results)),
+			terms.runtime_context()
+		),
+		result_info_pure
+	)
 	return terms.inferrable_term.typed(host_fn_type, usage_array(), literal_host_fn)
 end
 
@@ -1441,8 +1450,12 @@ end
 ---@param env Environment
 ---@return any
 local function inferred_expression(handler, env)
-	assert(handler, "no handler")
-	assert(env and env.get, "no env")
+	if not handler then
+		error("no handler")
+	end
+	if not env or not env.get then
+		error("no env")
+	end
 	return expression(handler, ExpressionArgs.new(expression_goal.infer, env))
 end
 
