@@ -35,7 +35,7 @@
             do
               >&2 printf "\033[1;4mChecking $file\033[0m\n"
               case $file in
-                (*/test-eval.lua|*/test-fitsinto.lua)
+                (*/test-fitsinto.lua)
                   # these tests don't work yet
                   ;;
                 (*/test.lua)

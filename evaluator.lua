@@ -1942,7 +1942,7 @@ function infer(
 				substitute_type_variables(field_type, typechecking_context:len() + 1)
 			)
 			add_arrays(usages, field_usages)
-			new_fields[k] = field_term
+			new_fields:set(k, field_term)
 		end
 		return value.record_type(type_data), usages, typed_term.record_cons(new_fields)
 	elseif inferrable_term:is_record_elim() then
@@ -1962,7 +1962,7 @@ function infer(
 			function make_prefix(field_names)
 				local prefix_fields = string_value_map()
 				for _, v in field_names:ipairs() do
-					prefix_fields[v] = subject_fields[v]
+					prefix_fields:set(v, subject_fields[v])
 				end
 				return value.record_value(prefix_fields)
 			end
@@ -1971,7 +1971,7 @@ function infer(
 			function make_prefix(field_names)
 				local prefix_fields = string_value_map()
 				for _, v in field_names:ipairs() do
-					prefix_fields[v] = value.neutral(neutral_value.record_field_access_stuck(subject_neutral, v))
+					prefix_fields:set(v, value.neutral(neutral_value.record_field_access_stuck(subject_neutral, v)))
 				end
 				return value.record_value(prefix_fields)
 			end
@@ -1992,7 +1992,7 @@ function infer(
 				local prefix = make_prefix(field_names)
 				local field_type = apply_value(f, prefix)
 				field_names:append(name)
-				field_types[name] = field_type
+				field_types:set(name, field_type)
 				return field_names, field_types
 			else
 				error("infer: unknown tuple type data constructor")
@@ -2529,7 +2529,7 @@ function evaluate(typed_term, runtime_context)
 		local fields = typed_term:unwrap_record_cons()
 		local new_fields = string_value_map()
 		for k, v in pairs(fields) do
-			new_fields[k] = U.tag("evaluate", { ["record_field_" .. tostring(k)] = v }, evaluate, v, runtime_context)
+			new_fields:set(k, U.tag("evaluate", { ["record_field_" .. tostring(k)] = v }, evaluate, v, runtime_context))
 		end
 		return value.record_value(new_fields)
 	elseif typed_term:is_record_elim() then
