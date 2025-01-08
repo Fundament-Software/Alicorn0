@@ -37,6 +37,7 @@
               case $file in
                 (*/test-fitsinto.lua)
                   # these tests don't work yet
+                  printf 'skipping!!!\n'
                   ;;
                 (*/test.lua)
                   # these tests only work on luajit
