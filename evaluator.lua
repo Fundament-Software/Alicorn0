@@ -324,7 +324,11 @@ end
 ---@param v value
 ---@return value
 local function const_combinator(v)
-	return value.closure("#CONST_PARAM", typed_term.bound_variable(1), runtime_context():append(v))
+	return value.closure(
+		"#CONST_PARAM",
+		typed_term.bound_variable(1),
+		runtime_context():append(v, "#CONST_COMBINATOR_V")
+	)
 end
 
 ---@param t value
@@ -898,7 +902,7 @@ add_comparer("value.enum_type", "value.tuple_desc_type", function(lctx, a, rctx,
 									typed.literal(value.result_info(terms.result_info(terms.purity.pure)))
 								)
 							),
-							rctx.runtime_context:append(b_univ)
+							rctx.runtime_context:append(b_univ, "#b_univ")
 						)
 					)
 				)
@@ -954,7 +958,7 @@ add_comparer("value.tuple_desc_type", "value.enum_type", function(lctx, a, rctx,
 									typed.literal(value.result_info(terms.result_info(terms.purity.pure)))
 								)
 							),
-							rctx.runtime_context:append(a_univ)
+							rctx.runtime_context:append(a_univ, "#a_univ")
 						)
 					)
 				)
@@ -1410,8 +1414,8 @@ function apply_value(f, arg)
 
 	if f:is_closure() then
 		local param_name, code, capture = f:unwrap_closure()
-		--return U.notail(U.tag("evaluate", { code = code }, evaluate, code, capture:append(arg)))
-		return evaluate(code, capture:append(arg))
+		--return U.notail(U.tag("evaluate", { code = code }, evaluate, code, capture:append(arg, param_name)))
+		return evaluate(code, capture:append(arg, param_name))
 	elseif f:is_neutral() then
 		return value.neutral(neutral_value.application_stuck(f:unwrap_neutral(), arg))
 	elseif f:is_host_value() then
@@ -2472,7 +2476,7 @@ function evaluate(typed_term, runtime_context)
 				error("evaluate: mismatch in tuple length from typechecking and evaluation")
 			end
 			for i = 1, length do
-				inner_context = inner_context:append(subject_elements[i])
+				inner_context = inner_context:append(subject_elements[i], names[i])
 			end
 		elseif subject_value:is_host_tuple_value() then
 			local subject_elements = subject_value:unwrap_host_tuple_value()
@@ -2495,14 +2499,14 @@ function evaluate(typed_term, runtime_context)
 				--error("evaluate: mismatch in tuple length from typechecking and evaluation")
 			end
 			for i = 1, real_length do
-				inner_context = inner_context:append(value.host_value(subject_elements[i]))
+				inner_context = inner_context:append(value.host_value(subject_elements[i]), names[i])
 			end
 			for _ = real_length + 1, length do
-				inner_context = inner_context:append(value.host_value(nil))
+				inner_context = inner_context:append(value.host_value(nil), names[i])
 			end
 		elseif subject_value:is_neutral() then
 			for i = 1, length do
-				inner_context = inner_context:append(index_tuple_value(subject_value, i))
+				inner_context = inner_context:append(index_tuple_value(subject_value, i), names[i])
 			end
 		else
 			p(subject_value)
@@ -2539,13 +2543,15 @@ function evaluate(typed_term, runtime_context)
 		if subject_value:is_record_value() then
 			local subject_fields = subject_value:unwrap_record_value()
 			for _, v in field_names:ipairs() do
-				inner_context = inner_context:append(subject_fields[v])
+				inner_context = inner_context:append(subject_fields[v], field_names[i])
 			end
 		elseif subject_value:is_neutral() then
 			local subject_neutral = subject_value:unwrap_neutral()
 			for _, v in field_names:ipairs() do
-				inner_context =
-					inner_context:append(value.neutral(neutral_value.record_field_access_stuck(subject_neutral, v)))
+				inner_context = inner_context:append(
+					value.neutral(neutral_value.record_field_access_stuck(subject_neutral, v)),
+					field_names[i]
+				)
 			end
 		else
 			error("evaluate, is_record_elim, subject_value: expected a record")
@@ -2608,9 +2614,9 @@ function evaluate(typed_term, runtime_context)
 		if target_val:is_enum_value() then
 			local variant, arg = target_val:unwrap_enum_value()
 			if variants:get(variant) then
-				return evaluate(variants:get(variant), runtime_context:append(arg))
+				return evaluate(variants:get(variant), runtime_context:append(arg, "#enum_case_arg"))
 			else
-				return evaluate(default, runtime_context:append(target_val))
+				return evaluate(default, runtime_context:append(target_val, "#enum_case_default"))
 			end
 		else
 			error "enum case expression didn't evaluate to an enum_value"
@@ -2755,7 +2761,7 @@ function evaluate(typed_term, runtime_context)
 	elseif typed_term:is_let() then
 		local name, expr, body = typed_term:unwrap_let()
 		local expr_value = evaluate(expr, runtime_context)
-		return evaluate(body, runtime_context:append(expr_value))
+		return evaluate(body, runtime_context:append(expr_value, name))
 	elseif typed_term:is_host_intrinsic() then
 		local source, start_anchor = typed_term:unwrap_host_intrinsic()
 		local source_val = evaluate(source, runtime_context)
@@ -2850,7 +2856,7 @@ function evaluate(typed_term, runtime_context)
 		local startprog = evaluate(first, runtime_context)
 		if startprog:is_program_end() then
 			local first_res = startprog:unwrap_program_end()
-			return evaluate(rest, runtime_context:append(first_res))
+			return evaluate(rest, runtime_context:append(first_res, "#program_sequence_first"))
 		elseif startprog:is_program_cont() then
 			local effect_id, effect_arg, cont = startprog:unwrap_program_cont()
 			local restframe = terms.continuation.frame(runtime_context, rest)

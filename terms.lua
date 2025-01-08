@@ -85,8 +85,9 @@ function RuntimeContext:append(v, name)
 	if value.value_check(v) ~= true then
 		error("RuntimeContext:append v must be a value")
 	end
-	-- TODO: add caller line number to this fake name?
-	name = name or ("#rctx%d"):format(self.bindings:len() + 1)
+	if not name then
+		error("must pass a name when appending to a runtime context")
+	end
 	local copy = { bindings = self.bindings:append(setmetatable({ name = name, val = v }, RuntimeContextBinding)) }
 	return setmetatable(copy, runtime_context_mt)
 end

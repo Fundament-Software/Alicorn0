@@ -712,7 +712,7 @@ let get-host-func-res-inner =
 						terms.typed_term.literal(terms.value.host_value(nil))
 					)
 				)
-				local ctx = terms.runtime_context():append(result_type)
+				local ctx = terms.runtime_context():append(result_type, "#get-host-func-res-inner_result_type")
 				return terms.value.closure("#TEST-1", tuple_build, ctx)
 			end
 			return get_host_func_res
@@ -736,7 +736,7 @@ let get-host-funcprog-res-inner =
 						terms.typed_term.literal(terms.value.host_value(nil))
 					)
 				)
-				local ctx = terms.runtime_context():append(result_type)
+				local ctx = terms.runtime_context():append(result_type, "#get-host-funcprog-res-inner_result_type")
 				return terms.value.closure("#TEST-1", tuple_build, ctx)
 			end
 			return get_host_func_res
