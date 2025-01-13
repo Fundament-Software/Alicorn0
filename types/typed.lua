@@ -387,10 +387,12 @@ function typed:as_host_if() end
 function typed:is_host_intrinsic() end
 ---@return typed source
 ---@return Anchor start_anchor
+---@return Anchor end_anchor
 function typed:unwrap_host_intrinsic() end
 ---@return boolean
 ---@return typed source
 ---@return Anchor start_anchor
+---@return Anchor end_anchor
 function typed:as_host_intrinsic() end
 ---@return boolean
 function typed:is_range() end
@@ -571,7 +573,7 @@ function typed:as_constrained_type() end
 ---@field host_unstrict_unwrap fun(container: typed): typed
 ---@field host_user_defined_type fun(id: { name: string }, family_args: ArrayValue): typed
 ---@field host_if fun(subject: typed, consequent: typed, alternate: typed): typed
----@field host_intrinsic fun(source: typed, start_anchor: Anchor): typed
+---@field host_intrinsic fun(source: typed, start_anchor: Anchor, end_anchor: Anchor): typed
 ---@field range fun(lower_bounds: ArrayValue, upper_bounds: ArrayValue, relation: typed): typed
 ---@field singleton fun(supertype: typed, value: value): typed
 ---@field program_sequence fun(first: typed, continue: typed): typed

@@ -27,6 +27,7 @@ function binding:is_annotated_lambda() end
 ---@return string param_name
 ---@return inferrable param_annotation
 ---@return Anchor start_anchor
+---@return Anchor end_anchor
 ---@return visibility visible
 ---@return checkable pure
 function binding:unwrap_annotated_lambda() end
@@ -34,6 +35,7 @@ function binding:unwrap_annotated_lambda() end
 ---@return string param_name
 ---@return inferrable param_annotation
 ---@return Anchor start_anchor
+---@return Anchor end_anchor
 ---@return visibility visible
 ---@return checkable pure
 function binding:as_annotated_lambda() end
@@ -41,16 +43,18 @@ function binding:as_annotated_lambda() end
 function binding:is_program_sequence() end
 ---@return inferrable first
 ---@return Anchor start_anchor
+---@return Anchor end_anchor
 function binding:unwrap_program_sequence() end
 ---@return boolean
 ---@return inferrable first
 ---@return Anchor start_anchor
+---@return Anchor end_anchor
 function binding:as_program_sequence() end
 
 ---@class (exact) bindingType: EnumType
 ---@field define_enum fun(self: bindingType, name: string, variants: Variants): bindingType
 ---@field let fun(name: string, expr: inferrable): binding
 ---@field tuple_elim fun(names: ArrayValue, subject: inferrable): binding
----@field annotated_lambda fun(param_name: string, param_annotation: inferrable, start_anchor: Anchor, visible: visibility, pure: checkable): binding
----@field program_sequence fun(first: inferrable, start_anchor: Anchor): binding
+---@field annotated_lambda fun(param_name: string, param_annotation: inferrable, start_anchor: Anchor, end_anchor: Anchor, visible: visibility, pure: checkable): binding
+---@field program_sequence fun(first: inferrable, start_anchor: Anchor, end_anchor: Anchor): binding
 return {}
