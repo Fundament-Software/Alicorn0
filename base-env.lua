@@ -9,6 +9,8 @@ local evaluator = require "evaluator"
 local U = require "alicorn-utils"
 local format = require "format"
 
+local NIL_ANCHOR = format.create_anchor(0, 0, "<NIL>")
+
 local value = terms.value
 local typed = terms.typed_term
 
@@ -990,7 +992,7 @@ local function apply_operative_impl(syntax, env)
 				env.typechecking_context,
 				spec_type,
 				env.typechecking_context,
-				terms.constraintcause.primitive("apply", format.create_anchor(0, 0, "<NIL>"))
+				terms.constraintcause.primitive("apply", NIL_ANCHOR, NIL_ANCHOR)
 			)
 		end)
 		if not ok then

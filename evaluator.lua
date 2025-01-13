@@ -1635,7 +1635,7 @@ function check(
 				typechecking_context,
 				goal_type,
 				typechecking_context,
-				terms.constraintcause.primitive("inferrable", NIL_ANCHOR)
+				terms.constraintcause.primitive("inferrable", NIL_ANCHOR, NIL_ANCHOR)
 			)
 		end
 
@@ -1672,7 +1672,7 @@ function check(
 			typechecking_context,
 			goal_type,
 			typechecking_context,
-			terms.constraintcause.primitive("checkable_term:is_tuple_cons", NIL_ANCHOR)
+			terms.constraintcause.primitive("checkable_term:is_tuple_cons", NIL_ANCHOR, NIL_ANCHOR)
 		)
 
 		return usages, typed_term.tuple_cons(new_elements)
@@ -1708,7 +1708,7 @@ function check(
 			typechecking_context,
 			goal_type,
 			typechecking_context,
-			terms.constraintcause.primitive("checkable_term:is_host_tuple_cons", NIL_ANCHOR)
+			terms.constraintcause.primitive("checkable_term:is_host_tuple_cons", NIL_ANCHOR, NIL_ANCHOR)
 		)
 
 		return usages, typed_term.host_tuple_cons(new_elements)
@@ -2069,7 +2069,7 @@ function infer_impl(
 			typechecking_context,
 			result_type_param_type,
 			typechecking_context,
-			terms.constraintcause.primitive("inferrable pi term", NIL_ANCHOR)
+			terms.constraintcause.primitive("inferrable pi term", NIL_ANCHOR, NIL_ANCHOR)
 		)
 		local result_type_result_type_result =
 			apply_value(result_type_result_type, evaluate(param_type_term, typechecking_context.runtime_context))
@@ -2214,7 +2214,7 @@ function infer_impl(
 				typechecking_context,
 				spec_type,
 				typechecking_context,
-				terms.constraintcause.primitive("tuple elimination", NIL_ANCHOR)
+				terms.constraintcause.primitive("tuple elimination", NIL_ANCHOR, NIL_ANCHOR)
 			)
 			return infer_tuple_type(spec_type, subject_value)
 		end)
@@ -2226,7 +2226,7 @@ function infer_impl(
 					typechecking_context,
 					host_spec_type,
 					typechecking_context,
-					terms.constraintcause.primitive("host tuple elimination", NIL_ANCHOR)
+					terms.constraintcause.primitive("host tuple elimination", NIL_ANCHOR, NIL_ANCHOR)
 				)
 				return infer_tuple_type(host_spec_type, subject_value)
 			end)
@@ -2266,7 +2266,7 @@ function infer_impl(
 			typechecking_context,
 			value.tuple_desc_type(univ_var),
 			typechecking_context,
-			terms.constraintcause.primitive("tuple type construction", NIL_ANCHOR)
+			terms.constraintcause.primitive("tuple type construction", NIL_ANCHOR, NIL_ANCHOR)
 		)
 		return value.union_type(terms.value.star(0, 0), univ_var), desc_usages, terms.typed_term.tuple_type(desc_term)
 	elseif inferrable_term:is_record_cons() then
@@ -2389,7 +2389,7 @@ function infer_impl(
 			typechecking_context,
 			value.enum_type(value.enum_desc_value(constrain_variants)),
 			typechecking_context,
-			terms.constraintcause.primitive("enum case matching", NIL_ANCHOR)
+			terms.constraintcause.primitive("enum case matching", NIL_ANCHOR, NIL_ANCHOR)
 		)
 		local term_variants = string_typed_map()
 		local result_types = {}
@@ -2438,7 +2438,7 @@ function infer_impl(
 			typechecking_context,
 			value.enum_desc_type(univ_var),
 			typechecking_context,
-			terms.constraintcause.primitive("enum type construction", NIL_ANCHOR)
+			terms.constraintcause.primitive("enum type construction", NIL_ANCHOR, NIL_ANCHOR)
 		)
 		return value.union_type(terms.value.star(0, 0), univ_var), desc_usages, terms.typed_term.enum_type(desc_term)
 	elseif inferrable_term:is_object_cons() then
@@ -2471,7 +2471,7 @@ function infer_impl(
 				typechecking_context,
 				op_userdata_type,
 				typechecking_context,
-				terms.constraintcause.primitive("operative userdata", NIL_ANCHOR)
+				terms.constraintcause.primitive("operative userdata", NIL_ANCHOR, NIL_ANCHOR)
 			)
 		end
 		local operative_usages = usage_array()
@@ -2566,14 +2566,14 @@ function infer_impl(
 			typechecking_context,
 			restype,
 			typechecking_context,
-			terms.constraintcause.primitive("inferred host if consequent", NIL_ANCHOR)
+			terms.constraintcause.primitive("inferred host if consequent", NIL_ANCHOR, NIL_ANCHOR)
 		)
 		typechecker_state:flow(
 			atype,
 			typechecking_context,
 			restype,
 			typechecking_context,
-			terms.constraintcause.primitive("inferred host if alternate", NIL_ANCHOR)
+			terms.constraintcause.primitive("inferred host if alternate", NIL_ANCHOR, NIL_ANCHOR)
 		)
 
 		local result_usages = usage_array()
@@ -2637,7 +2637,7 @@ function infer_impl(
 			typechecking_context,
 			value.tuple_desc_type(value.host_type_type),
 			typechecking_context,
-			terms.constraintcause.primitive("host tuple type construction", NIL_ANCHOR)
+			terms.constraintcause.primitive("host tuple type construction", NIL_ANCHOR, NIL_ANCHOR)
 		)
 		return terms.value.star(0, 0), desc_usages, terms.typed_term.host_tuple_type(desc_term)
 	elseif inferrable_term:is_program_sequence() then
@@ -4179,7 +4179,7 @@ function Reachability:constrain_transitivity(edge, edge_id, queue)
 				edge.rel,
 				edge.right,
 				math.min(edge.shallowest_block, l2.shallowest_block),
-				compositecause("composition", i, l2, edge_id, edge, NIL_ANCHOR)
+				compositecause("composition", i, l2, edge_id, edge, NIL_ANCHOR, NIL_ANCHOR)
 			)
 		)
 	end
@@ -4195,7 +4195,7 @@ function Reachability:constrain_transitivity(edge, edge_id, queue)
 				edge.rel,
 				r2.right,
 				math.min(edge.shallowest_block, r2.shallowest_block),
-				compositecause("composition", edge_id, edge, i, r2, NIL_ANCHOR)
+				compositecause("composition", edge_id, edge, i, r2, NIL_ANCHOR, NIL_ANCHOR)
 			)
 		)
 	end
@@ -4704,7 +4704,7 @@ function TypeCheckerState:constrain_leftcall_compose_1(edge, edge_id)
 					r2.rel,
 					r2.right,
 					math.min(edge.shallowest_block, r2.shallowest_block),
-					compositecause("leftcall_discharge", i, r2, edge_id, edge, NIL_ANCHOR)
+					compositecause("leftcall_discharge", i, r2, edge_id, edge, NIL_ANCHOR, NIL_ANCHOR)
 				)
 			)
 		end
@@ -4729,7 +4729,7 @@ function TypeCheckerState:constrain_on_left_meet(edge, edge_id)
 					edge.rel,
 					edge.right,
 					math.min(edge.shallowest_block, r.shallowest_block),
-					compositecause("composition", i, r, edge_id, edge, NIL_ANCHOR)
+					compositecause("composition", i, r, edge_id, edge, NIL_ANCHOR, NIL_ANCHOR)
 				)
 			)
 		end
@@ -4754,7 +4754,7 @@ function TypeCheckerState:constrain_on_right_meet(edge, edge_id)
 					edge.rel,
 					l.right,
 					math.min(edge.shallowest_block, l.shallowest_block),
-					compositecause("composition", edge_id, edge, i, l, NIL_ANCHOR)
+					compositecause("composition", edge_id, edge, i, l, NIL_ANCHOR, NIL_ANCHOR)
 				)
 			)
 		end
@@ -4784,7 +4784,7 @@ function TypeCheckerState:constrain_leftcall_compose_2(edge, edge_id)
 					edge.rel,
 					edge.right,
 					math.min(edge.shallowest_block, l2.shallowest_block),
-					compositecause("composition", i, l2, edge_id, edge, NIL_ANCHOR)
+					compositecause("composition", i, l2, edge_id, edge, NIL_ANCHOR, NIL_ANCHOR)
 				)
 			)
 		end
@@ -4812,7 +4812,7 @@ function TypeCheckerState:rightcall_constrain_compose_2(edge, edge_id)
 					l2.rel,
 					r,
 					math.min(edge.shallowest_block, l2.shallowest_block),
-					compositecause("rightcall_discharge", edge_id, edge, i, l2, NIL_ANCHOR)
+					compositecause("rightcall_discharge", edge_id, edge, i, l2, NIL_ANCHOR, NIL_ANCHOR)
 				)
 			)
 		end
@@ -4840,7 +4840,7 @@ function TypeCheckerState:rightcall_constrain_compose_1(edge, edge_id)
 					edge.rel,
 					r,
 					math.min(edge.shallowest_block, r2.shallowest_block),
-					compositecause("rightcall_discharge", i, r2, edge_id, edge, NIL_ANCHOR)
+					compositecause("rightcall_discharge", i, r2, edge_id, edge, NIL_ANCHOR, NIL_ANCHOR)
 				)
 			)
 		end
@@ -5162,13 +5162,13 @@ local function assemble_causal_chain(cause)
 
 	local g = typechecker_state.graph
 	if cause:is_composition() then
-		local left, right, pos = cause:unwrap_composition()
+		local left, right, start_anchor, end_anchor = cause:unwrap_composition()
 		return merge_causal_chain(g.constrain_edges:all()[left].cause, g.constrain_edges:all()[right].cause)
 	elseif cause:is_leftcall_discharge() then
-		local call, constraint, pos = cause:unwrap_leftcall_discharge()
+		local call, constraint, start_anchor, end_anchor = cause:unwrap_leftcall_discharge()
 		return merge_causal_chain(g.leftcall_edges:all()[call].cause, g.constrain_edges:all()[constraint].cause)
 	elseif cause:is_rightcall_discharge() then
-		local constraint, call, pos = cause:unwrap_rightcall_discharge()
+		local constraint, call, start_anchor, end_anchor = cause:unwrap_rightcall_discharge()
 		return merge_causal_chain(g.constrain_edges:all()[constraint].cause, g.rightcall_edges:all()[call].cause)
 	elseif cause:is_nested() then
 		local desc, inner = cause:unwrap_nested()
@@ -5176,10 +5176,10 @@ local function assemble_causal_chain(cause)
 		U.append(chain, desc)
 		return chain
 	elseif cause:is_primitive() then
-		local desc, pos = cause:unwrap_primitive()
+		local desc, start_anchor, end_anchor = cause:unwrap_primitive()
 		return { desc }
 	elseif cause:is_lost() then
-		local desc, stacktrace, pos = cause:unwrap_lost()
+		local desc, stacktrace, start_anchor, end_anchor = cause:unwrap_lost()
 		return { desc }
 	end
 end

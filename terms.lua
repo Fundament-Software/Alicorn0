@@ -660,28 +660,32 @@ local constraintcause = gen.declare_type()
 -- stylua: ignore
 constraintcause:define_enum("constraintcause", {
 	{ "primitive", {
-		"description", gen.builtin_string,
-		"position",    anchor_type,
-		"track", gen.any_lua_type,
+		"description",  gen.builtin_string,
+		"start_anchor", anchor_type,
+		"end_anchor",   anchor_type,
+		"track",        gen.any_lua_type,
 	} },
 	{ "composition", {
-		"left",     gen.builtin_number,
-		"right",    gen.builtin_number,
-		"position", anchor_type,
+		"left",         gen.builtin_number,
+		"right",        gen.builtin_number,
+		"start_anchor", anchor_type,
+		"end_anchor",   anchor_type,
 	} },
 	{ "nested", {
 		"description", gen.builtin_string,
-		"inner",     constraintcause,
+		"inner",       constraintcause,
 	} },
 	{ "leftcall_discharge", {
-		"call",       gen.builtin_number,
-		"constraint", gen.builtin_number,
-		"position",   anchor_type,
+		"call",         gen.builtin_number,
+		"constraint",   gen.builtin_number,
+		"start_anchor", anchor_type,
+		"end_anchor",   anchor_type,
 	} },
 	{ "rightcall_discharge", {
-		"constraint", gen.builtin_number,
-		"call",       gen.builtin_number,
-		"position",   anchor_type,
+		"constraint",   gen.builtin_number,
+		"call",         gen.builtin_number,
+		"start_anchor", anchor_type,
+		"end_anchor",   anchor_type,
 	} },
 	{ "lost", { --Information has been lost, please generate any information you can to help someone debug the lost information in the future
 		"unique_string", gen.builtin_string,

@@ -10,6 +10,7 @@ local module_mt = {}
 local evaluator = require "evaluator"
 local format = require "format"
 local infer = evaluator.infer
+local NIL_ANCHOR = format.create_anchor(0, 0, "<NIL>")
 
 local environment_mt
 
@@ -139,7 +140,7 @@ function environment:bind_local(binding)
 					self.typechecking_context,
 					spec_type,
 					self.typechecking_context,
-					terms.constraintcause.primitive("environment tuple-elim", format.create_anchor(0, 0, "<NIL>"))
+					terms.constraintcause.primitive("environment tuple-elim", NIL_ANCHOR, NIL_ANCHOR)
 				)
 			end)
 			if not ok then
