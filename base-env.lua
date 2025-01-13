@@ -147,6 +147,7 @@ local function unwrap_into_string(...)
 	return table.unpack(args)
 end
 
+---@param syntax ConstructedSyntax
 ---@param env Environment
 local switch_case = metalanguage.reducer(function(syntax, env)
 	local ok, tag, tail = syntax:match({ switch_case_header_matcher }, metalanguage.failure_handler, nil)
@@ -173,7 +174,8 @@ local switch_case = metalanguage.reducer(function(syntax, env)
 			"#switch-subj",
 			evaluator.typechecker_state:metavariable(env.typechecking_context):as_value(),
 			nil,
-			syntax.start_anchor
+			syntax.start_anchor,
+			syntax.end_anchor
 		),
 	})
 	local shadowed, term
@@ -289,7 +291,7 @@ local function intrinsic_impl(syntax, env)
 		error "env nil in base-env.intrinsic"
 	end
 	return true,
-		terms.inferrable_term.host_intrinsic(str, type--[[terms.checkable_term.inferrable(type)]], syntax.start_anchor),
+		terms.inferrable_term.host_intrinsic(str, type--[[terms.checkable_term.inferrable(type)]], syntax.start_anchor, syntax.end_anchor),
 		env
 end
 
@@ -376,6 +378,7 @@ local ascribed_name = metalanguage.reducer(
 				prev_name,
 				prev,
 				syntax.start_anchor,
+				syntax.end_anchor,
 				terms.visibility.explicit,
 				literal_purity_pure
 			)
@@ -420,6 +423,7 @@ local curry_segment = metalanguage.reducer(
 							name,
 							type_val,
 							syntax.start_anchor,
+							syntax.end_anchor,
 							terms.visibility.implicit,
 							literal_purity_pure
 						)
@@ -755,6 +759,7 @@ local function make_host_func_syntax(effectful)
 				"#host-func-arguments",
 				params_args,
 				tail.start_anchor or syntax.start_anchor,
+				tail.end_anchor or syntax.end_anchor,
 				terms.visibility.explicit,
 				literal_purity_pure
 			)
@@ -856,6 +861,7 @@ local function forall_impl(syntax, env)
 			inner_name,
 			params_args,
 			tail.start_anchor or syntax.start_anchor,
+			tail.end_anchor or syntax.end_anchor,
 			terms.visibility.explicit,
 			literal_purity_pure
 		)
@@ -1053,6 +1059,7 @@ local function lambda_impl(syntax, env)
 			inner_name,
 			args,
 			syntax.start_anchor,
+			syntax.end_anchor,
 			terms.visibility.explicit,
 			literal_purity_pure
 		)
@@ -1089,6 +1096,7 @@ local function lambda_prog_impl(syntax, env)
 			inner_name,
 			args,
 			syntax.start_anchor,
+			syntax.end_anchor,
 			terms.visibility.explicit,
 			literal_purity_effectful
 		)
@@ -1120,7 +1128,7 @@ local function lambda_single_impl(syntax, env)
 
 	local shadow, inner_env = env:enter_block(terms.block_purity.pure)
 	inner_env = inner_env:bind_local(
-		terms.binding.annotated_lambda(name, arg, syntax.start_anchor, terms.visibility.explicit, literal_purity_pure)
+		terms.binding.annotated_lambda(name, arg, syntax.start_anchor, syntax.end_anchor, terms.visibility.explicit, literal_purity_pure)
 	)
 	local ok, expr, env = tail:match(
 		{ exprs.block(metalanguage.accept_handler, exprs.ExpressionArgs.new(terms.expression_goal.infer, inner_env)) },
@@ -1147,7 +1155,7 @@ local function lambda_implicit_impl(syntax, env)
 
 	local shadow, inner_env = env:enter_block(terms.block_purity.pure)
 	inner_env = inner_env:bind_local(
-		terms.binding.annotated_lambda(name, arg, syntax.start_anchor, terms.visibility.implicit, literal_purity_pure)
+		terms.binding.annotated_lambda(name, arg, syntax.start_anchor, syntax.end_anchor, terms.visibility.implicit, literal_purity_pure)
 	)
 	local ok, expr, env = tail:match(
 		{ exprs.block(metalanguage.accept_handler, exprs.ExpressionArgs.new(terms.expression_goal.infer, inner_env)) },
@@ -1179,6 +1187,7 @@ local function lambda_annotated_impl(syntax, env)
 			inner_name,
 			args,
 			syntax.start_anchor,
+			syntax.end_anchor,
 			terms.visibility.explicit,
 			literal_purity_pure
 		)

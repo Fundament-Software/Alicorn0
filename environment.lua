@@ -216,10 +216,13 @@ function environment:bind_local(binding)
 		-- after you're finished, please comment it out so that, next time, the message below can be found again
 		error("(binding) tuple elim speculation failed! debugging this is left as an exercise to the maintainer")
 	elseif binding:is_annotated_lambda() then
-		local param_name, param_annotation, start_anchor, visible = binding:unwrap_annotated_lambda()
+		local param_name, param_annotation, start_anchor, end_anchor, visible = binding:unwrap_annotated_lambda()
 		if not start_anchor or not start_anchor.sourceid then
 			print("binding", binding)
 			error "missing start_anchor for annotated lambda binding"
+		elseif not end_anchor or not end_anchor.sourceid then
+			print("binding", binding)
+			error "missing end_anchor for annotated lambda binding"
 		end
 		local annotation_type, annotation_usages, annotation_term = infer(param_annotation, self.typechecking_context)
 		--print("binding lambda annotation: (typed term follows)")
@@ -230,7 +233,7 @@ function environment:bind_local(binding)
 			param_name,
 			inferrable_term.bound_variable(self.typechecking_context:len() + 1, U.bound_here())
 		)
-		local typechecking_context = self.typechecking_context:append(param_name, evaled, nil, start_anchor)
+		local typechecking_context = self.typechecking_context:append(param_name, evaled, nil, start_anchor, end_anchor)
 		return update_env(self, {
 			locals = locals,
 			bindings = bindings,
@@ -241,7 +244,7 @@ function environment:bind_local(binding)
 		if self.purity:is_pure() then
 			error("binding.program_sequence is only allowed in effectful blocks")
 		end
-		local first, start_anchor = binding:unwrap_program_sequence()
+		local first, start_anchor, end_anchor = binding:unwrap_program_sequence()
 		local first_type, first_usages, first_term = infer(first, self.typechecking_context)
 		if not first_type:is_program_type() then
 			error("program sequence must infer to a program type")
@@ -252,7 +255,7 @@ function environment:bind_local(binding)
 		local term = inferrable_term.bound_variable(n + 1, U.bound_here())
 		local locals = self.locals:put("#program-sequence", term)
 		local typechecking_context =
-			self.typechecking_context:append("#program-sequence", first_base_type, nil, start_anchor)
+			self.typechecking_context:append("#program-sequence", first_base_type, nil, start_anchor, end_anchor)
 		local bindings = self.bindings:append(binding)
 		return update_env(self, {
 			locals = locals,
@@ -374,11 +377,11 @@ function environment:exit_block(term, shadowed)
 			local names, subject = binding:unwrap_tuple_elim()
 			wrapped = terms.inferrable_term.tuple_elim(names, subject, wrapped)
 		elseif binding:is_annotated_lambda() then
-			local name, annotation, start_anchor, visible, purity = binding:unwrap_annotated_lambda()
-			wrapped = terms.inferrable_term.annotated_lambda(name, annotation, wrapped, start_anchor, visible, purity)
+			local name, annotation, start_anchor, end_anchor, visible, purity = binding:unwrap_annotated_lambda()
+			wrapped = terms.inferrable_term.annotated_lambda(name, annotation, wrapped, start_anchor, end_anchor, visible, purity)
 		elseif binding:is_program_sequence() then
-			local first, start_anchor = binding:unwrap_program_sequence()
-			wrapped = terms.inferrable_term.program_sequence(first, start_anchor, wrapped)
+			local first, start_anchor, end_anchor = binding:unwrap_program_sequence()
+			wrapped = terms.inferrable_term.program_sequence(first, start_anchor, end_anchor, wrapped)
 		else
 			error("exit_block: unknown kind: " .. binding.kind)
 		end
