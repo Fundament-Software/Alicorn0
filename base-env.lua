@@ -7,6 +7,10 @@ local terms = require "terms"
 local gen = require "terms-generators"
 local evaluator = require "evaluator"
 local U = require "alicorn-utils"
+local format = require "format"
+
+local create_symbol = format.create_symbol
+local internal_symbols = format.internal_symbols
 
 local value = terms.value
 local typed = terms.typed_term
@@ -71,19 +75,19 @@ local function let_impl(syntax, env)
 		error("env in let_impl isn't an env")
 	end
 
-	if not name["kind"] then
+	if format.is_symbol(name) then
+		env = env:bind_local(terms.binding.let(name, expr, syntax.start_anchor, syntax.end_anchor))
+	else
 		--print("binding destructuring with let")
 		--p(name)
 		local tupletype = gen.declare_array(gen.builtin_string)
 		local names = {}
 		for _, v in ipairs(name) do
-			table.insert(names, v.str)
-			if v.kind == nil then
-				error("v.kind is nil")
-			end
+			assert(format.is_symbol(v), "let_impl: v is not a Symbol")
+			table.insert(names, v)
 		end
 
-		ok, env = env:bind_local(terms.binding.tuple_elim(tupletype(table.unpack(names)), expr))
+		ok, env = env:bind_local(terms.binding.tuple_elim(tupletype(table.unpack(names)), expr, syntax.start_anchor, syntax.end_anchor))
 		if not ok then
 			return false, env
 		end
@@ -91,7 +95,7 @@ local function let_impl(syntax, env)
 		if name["kind"] == nil then
 			error("name['kind'] is nil")
 		end
-		ok, env = env:bind_local(terms.binding.let(name.str, expr))
+		ok, env = env:bind_local(terms.binding.let(name.str, expr, syntax.start_anchor, syntax.end_anchor))
 		if not ok then
 			return false, env
 		end
@@ -126,7 +130,7 @@ local function mk_impl(syntax, env)
 	if not ok then
 		return ok, tuple
 	end
-	return ok, terms.inferrable_term.enum_cons(name.str, tuple), env
+	return ok, terms.inferrable_term.enum_cons(name, tuple), env
 end
 
 ---@type Matcher
@@ -140,16 +144,6 @@ local switch_case_header_matcher = metalanguage.listtail(
 	metalanguage.symbol_exact(metalanguage.accept_handler, "->")
 )
 
----@param ... SyntaxSymbol
----@return ...
-local function unwrap_into_string(...)
-	local args = table.pack(...)
-	for i = 1, args.n do
-		args[i] = args[i].str
-	end
-	return table.unpack(args, 1, args.n)
-end
-
 ---@param syntax ConstructedSyntax
 ---@param env Environment
 local switch_case = metalanguage.reducer(function(syntax, env)
@@ -158,7 +152,7 @@ local switch_case = metalanguage.reducer(function(syntax, env)
 		return ok, tag
 	end
 
-	local names = gen.declare_array(gen.builtin_string)(unwrap_into_string(table.unpack(tag, 2)))
+	local names = terms.symbol_array(table.unpack(tag, 2))
 	tag = tag[1]
 
 	if not tag then
@@ -186,8 +180,12 @@ local switch_case = metalanguage.reducer(function(syntax, env)
 	ok, env = env:bind_local(
 		terms.binding.tuple_elim(
 			names,
-			terms.inferrable_term.bound_variable(env.typechecking_context:len(), U.bound_here())
-		)
+			terms.inferrable_term.bound_variable(env.typechecking_context:len(), U.bound_here()),
+			syntax.start_anchor,
+			syntax.end_anchor
+		),
+		syntax.start_anchor,
+		syntax.end_anchor
 	)
 	if not ok then
 		return false, env
@@ -225,20 +223,20 @@ local function switch_impl(syntax, env)
 		end
 		--TODO rewrite this to collect the branch envs and join them back together:
 		tag, term = table.unpack(tag)
-		variants:set(tag.str, term)
+		variants:set(tag, term)
 	end
 	return true, terms.inferrable_term.enum_case(subj, variants), env
 end
 
 ---@param _ any
----@param symbol SyntaxSymbol
+---@param symbol Symbol
 ---@param exprenv { val:inferrable, env:Environment }
 ---@return boolean
----@return { name:string, expr:inferrable }
+---@return { name: Symbol, expr:inferrable }
 ---@return Environment
 local function record_threaded_element_acceptor(_, symbol, exprenv)
 	local expr, env = utils.unpack_val_env(exprenv)
-	return true, { name = symbol.str, expr = expr }, env
+	return true, { name = symbol, expr = expr }, env
 end
 
 ---@param env Environment
@@ -260,9 +258,9 @@ local function record_build(syntax, env)
 	if not ok then
 		return ok, defs
 	end
-	local map = gen.declare_map(gen.builtin_string, terms.inferrable_term)()
+	local map = gen.declare_map(terms.symbol_type, terms.inferrable_term)()
 	for _, v in ipairs(defs) do
-		map[v.name] = v.expr
+		map:set(v.name, v.expr)
 	end
 	return true, terms.inferrable_term.record_cons(map), env
 end
@@ -320,7 +318,7 @@ local pure_ascribed_name = metalanguage.reducer(
 	---@param syntax ConstructedSyntax
 	---@param env Environment
 	---@return boolean
-	---@return string
+	---@return Symbol
 	---@return inferrable?
 	---@return Environment?
 	function(syntax, env)
@@ -355,7 +353,7 @@ local pure_ascribed_name = metalanguage.reducer(
 				typed.literal(type_mv:as_value())
 			)
 		end
-		return true, name.str, type, env
+		return true, name, type, env
 	end,
 	"pure_ascribed_name"
 )
@@ -382,7 +380,7 @@ local ascribed_name = metalanguage.reducer(
 		local ok
 		ok, env = env:bind_local(
 			terms.binding.annotated_lambda(
-				prev_name,
+				create_symbol(prev_name, nil_anchor, nil_anchor),
 				prev,
 				syntax.start_anchor,
 				syntax.end_anchor,
@@ -393,12 +391,12 @@ local ascribed_name = metalanguage.reducer(
 		if not ok then
 			return false, env
 		end
-		local ok, prev_binding = env:get(prev_name)
+		local ok, prev_binding = env:get(create_symbol(prev_name, U.anchor_here(), U.anchor_here())
 		if not ok then
 			error "#prev should always be bound, was just added"
 		end
 		---@cast prev_binding -string
-		ok, env = env:bind_local(terms.binding.tuple_elim(names, prev_binding))
+		ok, env = env:bind_local(terms.binding.tuple_elim(names, prev_binding, syntax.start_anchor, syntax.end_anchor))
 		if not ok then
 			return false, env
 		end
@@ -770,13 +768,14 @@ local function make_host_func_syntax(effectful)
 		local shadowed
 		shadowed, env = env:enter_block(terms.block_purity.pure)
 		-- tail.start_anchor can be nil so we fall back to the start_anchor for this host func type if needed
+		local start_anchor, end_anchor = tail.start_anchor or syntax.start_anchor, tail.end_anchor or syntax.end_anchor
 		-- TODO: use correct name in lambda parameter instead of adding an extra let
 		ok, env = env:bind_local(
 			terms.binding.annotated_lambda(
-				"#host-func-arguments",
+				internal_symbols["#host-func-arguments"],
 				params_args,
-				tail.start_anchor or syntax.start_anchor,
-				tail.end_anchor or syntax.end_anchor,
+				start_anchor,
+				end_anchor,
 				terms.visibility.explicit,
 				literal_purity_pure
 			)
@@ -784,15 +783,15 @@ local function make_host_func_syntax(effectful)
 		if not ok then
 			return false, env
 		end
-		local ok, arg = env:get("#host-func-arguments")
+		local ok, arg = env:get(internal_symbols["#host-func-arguments"])
 		if not ok then
 			error("wtf")
 		end
 		---@cast arg -string
 		if params_single then
-			ok, env = env:bind_local(terms.binding.let(params_names, arg))
+			ok, env = env:bind_local(terms.binding.let(params_names, arg, start_anchor, end_anchor))
 		else
-			ok, env = env:bind_local(terms.binding.tuple_elim(params_names, arg))
+			ok, env = env:bind_local(terms.binding.tuple_elim(params_names, arg, start_anchor, end_anchor))
 		end
 		if not ok then
 			return false, env
@@ -872,6 +871,7 @@ local function forall_impl(syntax, env)
 	local shadowed, inner_name
 	shadowed, env = env:enter_block(terms.block_purity.pure)
 	-- tail.start_anchor can be nil so we fall back to the start_anchor for this forall type if needed
+	local start_anchor, end_anchor = tail.start_anchor or syntax.start_anchor, tail.end_anchor or syntax.end_anchor
 	-- TODO: use correct name in lambda parameter instead of adding an extra let
 	if params_single then
 		inner_name = "forall(" .. params_names .. ")"
@@ -881,10 +881,10 @@ local function forall_impl(syntax, env)
 
 	ok, env = env:bind_local(
 		terms.binding.annotated_lambda(
-			inner_name,
+			create_symbol(inner_name, nil_anchor, nil_anchor),
 			params_args,
-			tail.start_anchor or syntax.start_anchor,
-			tail.end_anchor or syntax.end_anchor,
+			start_anchor,
+			end_anchor,
 			terms.visibility.explicit,
 			literal_purity_pure
 		)
@@ -892,15 +892,15 @@ local function forall_impl(syntax, env)
 	if not ok then
 		return false, env
 	end
-	local ok, arg = env:get(inner_name)
+	local ok, arg = env:get(create_symbol(inner_name, U.anchor_here(), U.anchor_here()))
 	if not ok then
 		error("wtf")
 	end
 	---@cast arg -string
 	if params_single then
-		ok, env = env:bind_local(terms.binding.let(params_names, arg))
+		ok, env = env:bind_local(terms.binding.let(params_names, arg, start_anchor, end_anchor))
 	else
-		ok, env = env:bind_local(terms.binding.tuple_elim(params_names, arg))
+		ok, env = env:bind_local(terms.binding.tuple_elim(params_names, arg, start_anchor, end_anchor))
 	end
 	if not ok then
 		return false, env
@@ -1091,11 +1091,12 @@ local function lambda_impl(syntax, env)
 	end
 
 	local args, names, env = thread.args, thread.names, thread.env
+	---@cast env Environment
 	local shadow, inner_env = env:enter_block(terms.block_purity.pure)
 	local inner_name = "λ(" .. table.concat(names, ",") .. ")"
 	ok, inner_env = inner_env:bind_local(
 		terms.binding.annotated_lambda(
-			inner_name,
+			create_symbol(inner_name, nil_anchor, nil_anchor),
 			args,
 			syntax.start_anchor,
 			syntax.end_anchor,
@@ -1107,7 +1108,7 @@ local function lambda_impl(syntax, env)
 		return false, inner_env
 	end
 	local _, arg = inner_env:get(inner_name)
-	ok, inner_env = inner_env:bind_local(terms.binding.tuple_elim(names, arg))
+	ok, inner_env = inner_env:bind_local(terms.binding.tuple_elim(names, arg, syntax.start_anchor, syntax.end_anchor))
 	if not ok then
 		return false, inner_env
 	end
@@ -1116,6 +1117,7 @@ local function lambda_impl(syntax, env)
 		metalanguage.failure_handler,
 		nil
 	)
+	---@cast env Environment
 	if not ok then
 		return ok, expr
 	end
@@ -1134,11 +1136,12 @@ local function lambda_prog_impl(syntax, env)
 
 	local args, names, env = thread.args, thread.names, thread.env
 	local inner_name = "λ-prog(" .. table.concat(names, ",") .. ")"
+	---@cast env Environment
 
 	local shadow, inner_env = env:enter_block(terms.block_purity.effectful)
 	ok, inner_env = inner_env:bind_local(
 		terms.binding.annotated_lambda(
-			inner_name,
+			create_symbol(inner_name, nil_anchor, nil_anchor),
 			args,
 			syntax.start_anchor,
 			syntax.end_anchor,
@@ -1149,8 +1152,8 @@ local function lambda_prog_impl(syntax, env)
 	if not ok then
 		return false, inner_env
 	end
-	local _, arg = inner_env:get(inner_name)
-	ok, inner_env = inner_env:bind_local(terms.binding.tuple_elim(names, arg))
+	local _, arg = inner_env:get(create_symbol(inner_name, U.anchor_here(), U.anchor_here()))
+	ok, inner_env = inner_env:bind_local(terms.binding.tuple_elim(names, arg, syntax.start_anchor, syntax.end_anchor))
 	if not ok then
 		return false, inner_env
 	end
@@ -1159,6 +1162,7 @@ local function lambda_prog_impl(syntax, env)
 		metalanguage.failure_handler,
 		nil
 	)
+	---@cast env Environment
 	if not ok then
 		return ok, expr
 	end
@@ -1252,8 +1256,8 @@ local function lambda_annotated_impl(syntax, env)
 	if not ok then
 		return false, inner_env
 	end
-	local _, arg = inner_env:get(inner_name)
-	ok, inner_env = inner_env:bind_local(terms.binding.tuple_elim(names, arg))
+	local _, arg = inner_env:get(create_symbol(inner_name, U.anchor_here(), U.anchor_here()))
+	ok, inner_env = inner_env:bind_local(terms.binding.tuple_elim(names, arg, syntax.start_anchor, syntax.end_anchor))
 	if not ok then
 		return false, inner_env
 	end
@@ -1329,16 +1333,16 @@ end
 local host_term_of_inner_type = value.host_function_type(
 	value.host_tuple_type(
 		terms.tuple_desc(
-			value.closure("#htoit-empty", typed.literal(terms.host_goal_type), terms.runtime_context(), U.bound_here())
+			value.closure(internal_symbols["#htoit-empty"], typed.literal(terms.host_goal_type), terms.runtime_context(), U.bound_here())
 		)
 	),
 	value.closure(
-		"#htoit-params",
+		internal_symbols["#htoit-params"],
 		typed.literal(
 			value.host_tuple_type(
 				terms.tuple_desc(
 					value.closure(
-						"#htoit-empty",
+						internal_symbols["#htoit-empty"],
 						typed.host_wrapped_type(typed.literal(value.host_type_type)),
 						terms.runtime_context(),
 						U.bound_here()
@@ -1372,20 +1376,19 @@ end
 ---@return value
 local function operative_handler_type(ud_type, anchor)
 	local teees = gen.declare_array(typed)
-	local names = gen.declare_array(gen.builtin_string)
-	local namesp4 = names(
-		"#operative_handler_type-syn",
-		"#operative_handler_type-env",
-		"#operative_handler_type-ud",
-		"#operative_handler_type-goal"
+	local namesp4 = terms.symbol_array(
+		internal_symbols["#operative_handler_type-syn"],
+		internal_symbols["#operative_handler_type-env"],
+		internal_symbols["#operative_handler_type-ud"],
+		internal_symbols["#operative_handler_type-goal"]
 	)
-	local pnamep0 = "#operative_handler_type-empty"
-	local pnamep1 = "#operative_handler_type-syn"
-	local pnamep2 = "#operative_handler_type-syn-env"
-	local pnamep3 = "#operative_handler_type-syn-env-ud"
-	local pnamer = "#operative_handler_type-params"
-	local pnamer0 = "#operative_handler_type-result-empty"
-	local pnamer1 = "#operative_handler_type-result-term"
+	local pnamep0 = internal_symbols["#operative_handler_type-empty"]
+	local pnamep1 = internal_symbols["#operative_handler_type-syn"]
+	local pnamep2 = internal_symbols["#operative_handler_type-syn-env"]
+	local pnamep3 = internal_symbols["#operative_handler_type-syn-env-ud"]
+	local pnamer = internal_symbols["#operative_handler_type-params"]
+	local pnamer0 = internal_symbols["#operative_handler_type-result-empty"]
+	local pnamer1 = internal_symbols["#operative_handler_type-result-term"]
 	return value.pi(
 		value.tuple_type(
 			terms.tuple_desc(
@@ -1512,12 +1515,12 @@ end
 ---@param type_fn fun(typed): typed
 ---@return inferrable
 local function build_wrap(body_fn, type_fn)
-	local names = gen.declare_array(gen.builtin_string)
+	local names = terms.symbol_array
 	local names0 = names()
-	local names1 = names("#wrap-TODO1")
-	local names2 = names("#wrap-TODO1", "#wrap-TODO2")
-	local pname_arg = "#wrap-arguments"
-	local pname_type = "#wrap-prev"
+	local names1 = names(internal_symbols["#wrap-TODO1"])
+	local names2 = names(internal_symbols["#wrap-TODO1"], internal_symbols["#wrap-TODO2"])
+	local pname_arg = internal_symbols["#wrap-arguments"]
+	local pname_type = internal_symbols["#wrap-prev"]
 	return lit_term(
 		value.closure(
 			pname_arg,
@@ -1579,12 +1582,12 @@ end
 ---@param type_fn fun(typed): typed
 ---@return inferrable
 local function build_unwrap(body_fn, type_fn)
-	local names = gen.declare_array(gen.builtin_string)
+	local names = terms.symbol_array
 	local names0 = names()
-	local names1 = names("#unwrap-TODO1")
-	local names2 = names("#unwrap-TODO1", "#unwrap-TODO2")
-	local pname_arg = "#unwrap-arguments"
-	local pname_type = "#unwrap-prev"
+	local names1 = names(internal_symbols["#unwrap-TODO1"])
+	local names2 = names(internal_symbols["#unwrap-TODO1"], internal_symbols["#unwrap-TODO2"])
+	local pname_arg = internal_symbols["#unwrap-arguments"]
+	local pname_type = internal_symbols["#unwrap-prev"]
 	return lit_term(
 		value.closure(
 			pname_arg,
@@ -1645,11 +1648,11 @@ end
 ---@param body_fn fun(typed): typed
 ---@return inferrable
 local function build_wrapped(body_fn)
-	local names = gen.declare_array(gen.builtin_string)
+	local names = terms.symbol_array
 	local names0 = names()
-	local names1 = names("#wrapped-TODO1")
-	local pname_arg = "#wrapped-arguments"
-	local pname_type = "#wrapped-prev"
+	local names1 = names(internal_symbols["#wrapped-TODO1"])
+	local pname_arg = internal_symbols["#wrapped-arguments"]
+	local pname_type = internal_symbols["#wrapped-prev"]
 	return lit_term(
 		value.closure(
 			pname_arg,
@@ -1695,6 +1698,7 @@ local function build_wrapped(body_fn)
 	)
 end
 
+---@param syntax ConstructedSyntax
 ---@param env Environment
 local enum_variant = metalanguage.reducer(function(syntax, env)
 	local ok, tag, tail = syntax:match({
@@ -1713,7 +1717,7 @@ local enum_variant = metalanguage.reducer(function(syntax, env)
 		return false, "missing enum variant name"
 	end
 
-	return true, tag.str, terms.inferrable_term.tuple_type(tail.args), env
+	return true, tag, terms.inferrable_term.tuple_type(tail.args), env
 end, "enum_variant")
 
 ---@type lua_operative

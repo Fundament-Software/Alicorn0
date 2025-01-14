@@ -17,7 +17,8 @@ local function simplify_list(list, remove_comments)
 	else
 		if list.kind == "literal" then
 			return list.val
-		elseif list.kind == "symbol" then
+		elseif format.is_symbol(list) then
+			---@cast list Symbol
 			return list.str
 		elseif list.kind == "comment" then
 			if not remove_comments then

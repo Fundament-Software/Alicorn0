@@ -1,8 +1,12 @@
 local metalanguage = require "metalanguage"
 local format = require "format"
+local is_symbol = format.is_symbol
 
 local function syntax_convert(tree)
-	if tree.kind == "list" then
+	if is_symbol(tree) then
+		---@cast tree Symbol
+		return metalanguage.symbol(tree)
+	elseif tree.kind == "list" then
 		local res = metalanguage.nilval
 		for i = #tree.elements, 1, -1 do
 			local elem = syntax_convert(tree.elements[i])
@@ -11,9 +15,6 @@ local function syntax_convert(tree)
 			end
 		end
 		return res
-	elseif tree.kind == "symbol" then
-		assert(tree["kind"])
-		return metalanguage.symbol(tree.start_anchor, tree.end_anchor, tree)
 	elseif tree.kind == "literal" then
 		return metalanguage.value(
 			tree.start_anchor,

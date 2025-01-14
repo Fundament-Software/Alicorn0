@@ -59,11 +59,11 @@ function neutral_value:as_tuple_element_access_stuck() end
 ---@return boolean
 function neutral_value:is_record_field_access_stuck() end
 ---@return neutral_value subject
----@return string field_name
+---@return Symbol field_name
 function neutral_value:unwrap_record_field_access_stuck() end
 ---@return boolean
 ---@return neutral_value subject
----@return string field_name
+---@return Symbol field_name
 function neutral_value:as_record_field_access_stuck() end
 ---@return boolean
 function neutral_value:is_host_application_stuck() end
@@ -130,7 +130,7 @@ function neutral_value:as_host_unwrap_stuck() end
 ---@field enum_rec_elim_stuck fun(handler: value, subject: neutral_value): neutral_value
 ---@field object_elim_stuck fun(mechanism: value, subject: neutral_value): neutral_value
 ---@field tuple_element_access_stuck fun(subject: neutral_value, index: number): neutral_value
----@field record_field_access_stuck fun(subject: neutral_value, field_name: string): neutral_value
+---@field record_field_access_stuck fun(subject: neutral_value, field_name: Symbol): neutral_value
 ---@field host_application_stuck fun(function: any, arg: neutral_value): neutral_value
 ---@field host_tuple_stuck fun(leading: ArrayValue, stuck_element: neutral_value, trailing: ArrayValue): neutral_value
 ---@field host_if_stuck fun(subject: neutral_value, consequent: value, alternate: value): neutral_value

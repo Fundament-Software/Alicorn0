@@ -2,6 +2,8 @@
 -- put tokens on a new line if their line number is greater than the current line
 -- this is not  a format tool it's a lisp-ifier for the format
 
+local is_symbol = require("format").is_symbol
+
 local indentation_char = "\t"
 
 ---@param ast FormatList
@@ -34,7 +36,7 @@ local function unformat_list(ast, prev_line, indentation)
 		acc = acc .. ")"
 	elseif ast.kind == "literal" then
 		acc = acc .. tostring(ast.val)
-	elseif ast.kind == "symbol" then
+	elseif is_symbol(ast) then
 		acc = acc .. ast.str
 	elseif ast.kind == "comment" then
 		indentation = indentation + 1

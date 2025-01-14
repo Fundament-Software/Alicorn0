@@ -1,6 +1,8 @@
 local terms = require "terms"
 local metalanguage = require "metalanguage"
 local U = require "alicorn-utils"
+local format = require "format"
+local create_symbol = format.create_symbol
 local runtime_context = terms.runtime_context
 local pretty_printer = require "pretty-printer"
 local s = pretty_printer.s
@@ -19,6 +21,7 @@ local host_environment_type = terms.host_environment_type
 local host_typed_term_type = terms.host_typed_term_type
 local host_goal_type = terms.host_goal_type
 local host_inferrable_term_type = terms.host_inferrable_term_type
+local symbol_type = terms.symbol_type
 
 local diff = require "traits".diff
 
@@ -45,8 +48,10 @@ local result_info_pure = value.result_info(result_info(purity.pure))
 local OMEGA = 9
 local typechecker_state
 local evaluate, infer, check, apply_value
-local name_array = string_array
+local name_array = terms.symbol_array
 local typed = terms.typed_term
+
+local internal_symbols = format.internal_symbols
 
 ---@class ConstraintError
 ---@field desc string
@@ -101,12 +106,13 @@ local function luatovalue(luafunc)
 	local new_body = typed_array()
 
 	for i = 1, len do
-		parameters:append(debug.getlocal(luafunc, i))
+		local parameter_name, parameter_value = debug.getlocal(luafunc, i)
+		parameters:append(create_symbol(parameter_name, nil_anchor, nil_anchor), parameter_value)
 		new_body:append(typed.bound_variable(i + 1, U.bound_here()))
 	end
 
 	return value.closure(
-		"#luatovalue-args",
+		internal_symbols["#luatovalue-args"],
 		typed.application(
 			typed.literal(value.host_value(luafunc)),
 			typed.tuple_elim(parameters, typed.bound_variable(1, U.bound_here()), len, typed.host_tuple_cons(new_body))
@@ -488,7 +494,7 @@ end
 ---@return value
 local function const_combinator(v)
 	return value.closure(
-		"#CONST_PARAM",
+		internal_symbols["#CONST_PARAM"],
 		typed_term.bound_variable(1, U.bound_here()),
 		runtime_context():append(v),
 		U.bound_here()
@@ -851,12 +857,16 @@ end
 --for substituting a single var at index
 ---@param val value
 ---@param index integer
----@param param_name string?
+---@param param_name Symbol?
 ---@param ctx RuntimeContext
 ---@param ambient_typechecking_context TypecheckingContext
 ---@return value
 function substitute_type_variables(val, index, param_name, ctx, ambient_typechecking_context)
-	param_name = param_name and "#sub-" .. param_name or "#sub-param"
+	if param_name then
+		param_name = create_symbol("#sub-" .. param_name.str, param_name.start_anchor, param_name.end_anchor)
+	else
+		param_name = internal_symbols["#sub-param"]
+	end
 	--print("value before substituting (val): (value term follows)")
 	--print(val)
 	local substituted = substitute_inner(val, {
@@ -1098,7 +1108,7 @@ add_comparer("value.enum_type", "value.tuple_desc_type", function(lctx, a, rctx,
 								value_array(
 									value.enum_value(terms.DescCons.empty, value.tuple_value(value_array())),
 									value.closure(
-										"#prefix",
+										internal_symbols["#prefix"],
 										typed_term.literal(b),
 										rctx.runtime_context,
 										U.bound_here()
@@ -1107,7 +1117,7 @@ add_comparer("value.enum_type", "value.tuple_desc_type", function(lctx, a, rctx,
 							)
 						),
 						value.closure(
-							"#prefix",
+							internal_symbols["#prefix"],
 							typed_term.tuple_elim(
 								string_array("prefix-desc"),
 								typed_term.bound_variable(#rctx + 2, U.bound_here()),
@@ -1165,7 +1175,7 @@ add_comparer("value.tuple_desc_type", "value.enum_type", function(lctx, a, rctx,
 								value_array(
 									value.enum_value(terms.DescCons.empty, value.tuple_value(value_array())),
 									value.closure(
-										"#prefix",
+										internal_symbols["#prefix"],
 										typed_term.literal(a),
 										rctx.runtime_context,
 										U.bound_here()
@@ -1174,7 +1184,7 @@ add_comparer("value.tuple_desc_type", "value.enum_type", function(lctx, a, rctx,
 							)
 						),
 						value.closure(
-							"#prefix",
+							internal_symbols["#prefix"],
 							typed_term.tuple_elim(
 								string_array("prefix-desc"),
 								typed_term.bound_variable(#rctx + 2, U.bound_here()),
@@ -1716,7 +1726,7 @@ function check(
 			desc = terms.cons(
 				desc,
 				value.closure(
-					"#check-tuple-cons-param",
+					internal_symbols["#check-tuple-cons-param"],
 					typed_term.literal(value.singleton(el_type, el_val)),
 					typechecking_context.runtime_context,
 					U.bound_here()
@@ -1758,7 +1768,7 @@ function check(
 			desc = terms.cons(
 				desc,
 				value.closure(
-					"#check-tuple-cons-param",
+					internal_symbols["#check-tuple-cons-param"],
 					typed_term.literal(value.singleton(el_type, el_val)),
 					typechecking_context.runtime_context,
 					U.bound_here()
@@ -2363,7 +2373,7 @@ function infer_impl(
 		end
 		return true, value.host_tuple_type(type_data), usages, typed_term.host_tuple_cons(new_elements)
 	elseif inferrable_term:is_tuple_elim() then
-		local names, subject, body = inferrable_term:unwrap_tuple_elim()
+		local names, subject, body, start_anchor, end_anchor = inferrable_term:unwrap_tuple_elim()
 		local ok, subject_type, subject_usages, subject_term = infer(subject, typechecking_context)
 		if not ok then
 			return false, subject_type
@@ -2389,7 +2399,7 @@ function infer_impl(
 				typechecking_context,
 				spec_type,
 				typechecking_context,
-				terms.constraintcause.primitive("tuple elimination", U.anchor_here(), U.anchor_here())
+				terms.constraintcause.primitive("tuple elimination", start_anchor, end_anchor)
 			)
 			if not ok then
 				return false, err
@@ -2404,7 +2414,7 @@ function infer_impl(
 					typechecking_context,
 					host_spec_type,
 					typechecking_context,
-					terms.constraintcause.primitive("host tuple elimination", U.anchor_here(), U.anchor_here())
+					terms.constraintcause.primitive("host tuple elimination", start_anchor, end_anchor)
 				)
 				if not ok then
 					return false, err
@@ -2888,7 +2898,7 @@ function infer_impl(
 		return true, restype, result_usages, typed_term.host_if(sterm, cterm, aterm)
 	elseif inferrable_term:is_let() then
 		-- print(inferrable_term:pretty_print())
-		local name, expr, body = inferrable_term:unwrap_let()
+		local name, expr, body, start_anchor, end_anchor = inferrable_term:unwrap_let()
 		local ok, exprtype, exprusages, exprterm = infer(expr, typechecking_context)
 		if not ok then
 			return false, exprtype
@@ -3412,7 +3422,7 @@ function evaluate_impl(typed_term, runtime_context, ambient_typechecking_context
 			if mechanism_value:is_object_value() then
 				local constructor, arg = subject_value:unwrap_enum_value()
 				local methods, capture = mechanism_value:unwrap_object_value()
-				local this_method = value.closure("#ENUM_PARAM", methods[constructor], capture, U.bound_here())
+				local this_method = value.closure(internal_symbols["#ENUM_PARAM"], methods[constructor], capture, U.bound_here())
 				return apply_value(this_method, arg, ambient_typechecking_context)
 			elseif mechanism_value:is_neutral() then
 				-- objects and enums are categorical duals
@@ -3499,7 +3509,7 @@ function evaluate_impl(typed_term, runtime_context, ambient_typechecking_context
 			if mechanism_value:is_enum_value() then
 				local methods, capture = subject_value:unwrap_object_value()
 				local constructor, arg = mechanism_value:unwrap_enum_value()
-				local this_method = value.closure("#OBJECT_PARAM", methods[constructor], capture, U.bound_here())
+				local this_method = value.closure(internal_symbols["#OBJECT_PARAM"], methods[constructor], capture, U.bound_here())
 				return apply_value(this_method, arg, ambient_typechecking_context)
 			elseif mechanism_value:is_neutral() then
 				-- objects and enums are categorical duals
@@ -3618,7 +3628,7 @@ function evaluate_impl(typed_term, runtime_context, ambient_typechecking_context
 		local expr_value = evaluate(expr, runtime_context, ambient_typechecking_context)
 		return evaluate(body, runtime_context:append(expr_value), ambient_typechecking_context)
 	elseif typed_term:is_host_intrinsic() then
- 		local source, start_anchor, end_anchor = typed_term:unwrap_host_intrinsic()
+		local source, start_anchor, end_anchor = typed_term:unwrap_host_intrinsic()
 		local source_val = evaluate(source, runtime_context, ambient_typechecking_context)
 		if source_val:is_host_value() then
 			local source_str = source_val:unwrap_host_value()

@@ -2,6 +2,7 @@ local metalanguage = require "metalanguage"
 local alicorn = require "alicorn-evaluator"
 local conexpr = require "contextual-exprs"
 local environment = require "environment"
+local format = require "format"
 
 local val = metalanguage.primitive_operative(function(syntax, env)
 	local ok, name, expr, nextenv = syntax:match({
@@ -19,10 +20,10 @@ local val = metalanguage.primitive_operative(function(syntax, env)
 		return false, name
 	end
 	local binder, envres
-	if not name["kind"] then
-		binder = conexpr.bindtuple(name)
-	elseif type(name) == "string" then
+	if type(name) == "string" then
 		binder = conexpr.bindval(name)
+	elseif not (name["kind"] or format.is_symbol(name)) then
+		binder = conexpr.bindtuple(name)
 	else
 		error "names had an invalid value?"
 	end

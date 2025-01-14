@@ -4,9 +4,10 @@ local gen = require "terms-generators"
 local evaluator = require "evaluator"
 local U = require "alicorn-utils"
 
-local value = terms.value
-local typed = terms.typed_term
 local fitsinto = evaluator.fitsinto
+local internal_symbols = require("format").internal_symbols
+local typed = terms.typed_term
+local value = terms.value
 
 local val_array = gen.declare_array(value)
 
@@ -125,7 +126,7 @@ local passed, failed, total = (require "tap")(function(test)
 	test("tuple type decl", function(expect)
 		-- fitsinto needs to handle tuple type by applying the closures on prior element (from right side always)
 		-- not by blindly applying closure like it is right now
-		local names = gen.declare_array(gen.builtin_string)
+		local names = terms.symbol_array
 		local decl_a = value.tuple_type(
 			val_desc_elem(
 				val_tup_cons(
@@ -133,16 +134,16 @@ local passed, failed, total = (require "tap")(function(test)
 						val_tup_cons(
 							val_desc_empty,
 							value.closure(
-								"#A",
+								internal_symbols["#A"],
 								typed.tuple_elim(names(), typed.bound_variable(1, U.here()), 0, typed.star(1)),
 								terms.runtime_context()
 							)
 						)
 					),
 					value.closure(
-						"#B",
+						internal_symbols["#B"],
 						terms.typed_term.tuple_elim(
-							names("#FOO"),
+							names(internal_symbols["#FOO"]),
 							terms.typed_term.bound_variable(1, U.here()),
 							1,
 							typed.bound_variable(2, U.here())
@@ -160,15 +161,16 @@ local passed, failed, total = (require "tap")(function(test)
 							val_desc_empty,
 							value.closure(
 								"#C",
+								internal_symbols["#C"],
 								typed.tuple_elim(names(), typed.bound_variable(1, U.here()), 0, typed.star(1)),
 								terms.runtime_context()
 							)
 						)
 					),
 					value.closure(
-						"#D",
+						internal_symbols["#D"],
 						terms.typed_term.tuple_elim(
-							names("#BAR"),
+							names(internal_symbols["#BAR"]),
 							terms.typed_term.bound_variable(1, U.here()),
 							1,
 							typed.bound_variable(2, U.here())

@@ -25,7 +25,9 @@ local Anchor = {}
 ---@param stop Anchor?
 ---@return string
 function Anchor:display(stop)
-	if stop == nil then
+	if rawequal(self, nil_anchor) then
+		return "🗋"
+	elseif stop == nil then
 		return tostring(self)
 	end
 
@@ -38,18 +40,24 @@ function Anchor:display(stop)
 		.. tostring(stop.char)
 end
 
+---@type Anchor
+local nil_anchor
 local anchor_mt = {
 	__lt = function(fst, snd)
-		return snd.line > fst.line or (snd.line == fst.line and snd.char > fst.char)
+		return snd.line > fst.line or (snd.line == fst.line and snd.char > fst.char) or (snd.char == fst.char and snd.sourceid < fst.sourceid)
 	end,
 	__le = function(fst, snd)
 		return fst < snd or fst == snd
 	end,
 	__eq = function(fst, snd)
-		return (snd.line == fst.line and snd.char == fst.char)
+		return (snd.line == fst.line and snd.char == fst.char and snd.sourceid == fst.sourceid)
 	end,
 	__tostring = function(self)
-		return tostring(self.sourceid) .. ":" .. tostring(self.line) .. ":" .. tostring(self.char)
+		if rawequal(self, nil_anchor) then
+			return "🗋"
+		else
+			return tostring(self.sourceid) .. ":" .. tostring(self.line) .. ":" .. tostring(self.char)
+		end
 	end,
 	__index = Anchor,
 }
@@ -59,16 +67,71 @@ local anchor_mt = {
 ---@param sourceid string
 ---@return Anchor
 local function create_anchor(line, char, sourceid)
-	local new_anchor = {
+	return setmetatable({
 		line = line,
 		char = char,
 		sourceid = sourceid,
-	}
-	setmetatable(new_anchor, anchor_mt)
-	return new_anchor
+	}, anchor_mt)
 end
 
-local nil_anchor = create_anchor(0, 0, "<NIL>")
+nil_anchor = create_anchor(0, 0, "")
+
+---@class Symbol
+---@field str string
+---@field start_anchor Anchor
+---@field end_anchor Anchor
+local Symbol = {}
+
+local symbol_mt = {
+	__lt = function(fst, snd)
+		return fst.str < snd.str
+	end,
+	__le = function(fst, snd)
+		return fst.str <= snd.str
+	end,
+	__eq = function(fst, snd)
+		return snd.str == fst.str
+	end,
+	__tostring = function(self)
+		if self.start_anchor == self.end_anchor then
+			return tostring(self.str) .. "@(" .. tostring(self.start_anchor) .. ")"
+		else
+			return tostring(self.str) .. "@(" .. tostring(self.start_anchor) .. ")–(" .. tostring(self.end_anchor) .. ")"
+		end
+	end,
+	__index = Symbol,
+}
+
+---@param str string
+---@param start_anchor Anchor
+---@param end_anchor Anchor
+---@return Symbol
+local function create_symbol(str, start_anchor, end_anchor)
+	return setmetatable({
+		str = str,
+		start_anchor = start_anchor,
+		end_anchor = end_anchor,
+	}, symbol_mt)
+end
+
+---@param symbol any
+---@return Symbol?
+local function is_symbol(symbol)
+	if getmetatable(symbol) == symbol_mt then
+		return symbol
+	else
+		return nil
+	end
+end
+
+---@type {[string]: Symbol}
+local internal_symbols = setmetatable({}, {
+	__index = function (self, str)
+		local symbol = create_symbol(str, nil_anchor, nil_anchor)
+		rawset(self, str, symbol)
+		return symbol
+	end
+})
 
 lpeg.locale(lpeg)
 
@@ -77,7 +140,9 @@ local function element(kind, pattern)
 end
 
 local function symbol(value)
-	return element("symbol", Cg(value, "str") * Cg(V "anchor", "end_anchor"))
+	return Cmt(V "anchor" * Cg(value) * V "anchor", function (_, _, start_anchor, str, end_anchor)
+		return true, create_symbol(str, start_anchor, end_anchor)
+	end)
 end
 
 local function space_tokens(pattern)
@@ -682,4 +747,4 @@ local function parse(input, filename)
 	return ast
 end
 
-return { parse = parse, anchor_mt = anchor_mt, create_anchor = create_anchor, nil_anchor = nil_anchor }
+return { parse = parse, anchor_mt = anchor_mt, symbol_mt = symbol_mt, create_anchor = create_anchor, create_symbol = create_symbol, internal_symbols = internal_symbols, is_symbol = is_symbol, nil_anchor = nil_anchor }

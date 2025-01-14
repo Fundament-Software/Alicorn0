@@ -120,7 +120,7 @@ local function tuple_elim_helper(pp, names, subject, context)
 	pp:unit(pp:_resetcolor())
 
 	for i, name in names:ipairs() do
-		inner_context = inner_context:append(name)
+		inner_context = inner_context:append(tostring(name))
 
 		if i > 1 then
 			pp:unit(pp:_color())
@@ -217,10 +217,10 @@ end
 local function inferrable_let_or_tuple_elim(pp, term, context)
 	pp:_enter()
 
-	local name, expr, names, subject
+	local name, expr, names, subject, start_anchor, end_anchor
 	while true do
 		if term:is_let() then
-			name, expr, term = term:unwrap_let()
+			name, expr, term, start_anchor, end_anchor = term:unwrap_let()
 
 			-- rear-loading prefix to cheaply handle first loop not needing prefix
 			pp:unit(pp:_color())
@@ -230,7 +230,7 @@ local function inferrable_let_or_tuple_elim(pp, term, context)
 			pp:unit("\n")
 			pp:_prefix()
 		elseif term:is_tuple_elim() then
-			names, subject, term = term:unwrap_tuple_elim()
+			names, subject, term, start_anchor, end_anchor = term:unwrap_tuple_elim()
 
 			pp:unit(pp:_color())
 			pp:unit("inferrable.let ")
@@ -292,6 +292,8 @@ end
 ---@return (string | ArrayValue)?
 ---@return inferrable
 ---@return PrettyPrintingContext
+---@return Anchor?
+---@return Anchor?
 local function inferrable_destructure_helper(term, context)
 	if term:is_let() then
 		-- destructuring with a let effectively just renames the parameter
@@ -300,25 +302,25 @@ local function inferrable_destructure_helper(term, context)
 		-- but some operatives that are generic over lets and tuple-elims do this
 		-- e.g. forall, lambda
 		-- so we pretty this anyway
-		local name, expr, body = term:unwrap_let()
+		local name, expr, body, start_anchor, end_anchor = term:unwrap_let()
 		local ok, index = expr:as_bound_variable()
 		local is_destructure = ok and index == context:len()
 		if is_destructure then
 			context = context:append(name)
-			return true, true, name, body, context
+			return true, true, name, body, context, start_anchor, end_anchor
 		end
 	elseif term:is_tuple_elim() then
-		local names, subject, body = term:unwrap_tuple_elim()
+		local names, subject, body, start_anchor, end_anchor = term:unwrap_tuple_elim()
 		local ok, index = subject:as_bound_variable()
 		local is_destructure = ok and index == context:len()
 		if is_destructure then
 			for _, name in names:ipairs() do
 				context = context:append(name)
 			end
-			return true, false, names, body, context
+			return true, false, names, body, context, start_anchor, end_anchor
 		end
 	end
-	return false, false, nil, term, context
+	return false, false, nil, term, context, nil, nil
 end
 
 ---@param term typed
@@ -381,7 +383,7 @@ local function inferrable_tuple_type_flatten(desc, context)
 			return false
 		end
 		local inner_context = context:append(param_name)
-		local _, _, names, body, inner_context = inferrable_destructure_helper(body, inner_context)
+		local _, _, names, body, inner_context, start_anchor, end_anchor = inferrable_destructure_helper(body, inner_context)
 		---@cast names ArrayValue
 		local ok, prev, n = inferrable_tuple_type_flatten(desc, context)
 		if not ok then
@@ -601,7 +603,7 @@ end
 ---@param pp PrettyPrint
 ---@param context AnyContext
 function binding_override_pretty:let(pp, context)
-	local name, expr = self:unwrap_let()
+	local name, expr, start_anchor, end_anchor = self:unwrap_let()
 	context = ensure_context(context)
 
 	pp:_enter()
@@ -631,7 +633,7 @@ end
 ---@param pp PrettyPrint
 ---@param context AnyContext
 function binding_override_pretty:tuple_elim(pp, context)
-	local names, subject = self:unwrap_tuple_elim()
+	local names, subject, start_anchor, end_anchor = self:unwrap_tuple_elim()
 	context = ensure_context(context)
 
 	pp:_enter()
@@ -692,7 +694,7 @@ function inferrable_term_override_pretty:annotated_lambda(pp, context)
 	context = ensure_context(context)
 	local inner_context = context:append(param_name)
 	local is_tuple_type, desc = as_any_tuple_type(param_annotation)
-	local is_destructure, is_rename, names, body, inner_context = inferrable_destructure_helper(body, inner_context)
+	local is_destructure, is_rename, names, body, inner_context, start_anchor, end_anchor = inferrable_destructure_helper(body, inner_context)
 	if is_rename then
 		---@cast names string
 		param_name = names
@@ -891,11 +893,11 @@ function inferrable_term_override_pretty:pi(pp, context)
 	context = ensure_context(context)
 	local result_context = context
 	local param_is_tuple_type, param_desc = as_any_tuple_type(param_type)
-	local result_is_readable, param_name, _, result_body, anchor = result_type:as_annotated_lambda()
+	local result_is_readable, param_name, _, result_body, result_start_anchor, result_end_anchor = result_type:as_annotated_lambda()
 	local result_is_destructure, result_is_rename, param_names, result_is_tuple_type, result_desc
 	if result_is_readable then
 		result_context = result_context:append(param_name)
-		result_is_destructure, result_is_rename, param_names, result_body, result_context =
+		result_is_destructure, result_is_rename, param_names, result_body, result_context, result_start_anchor, result_end_anchor =
 			inferrable_destructure_helper(result_body, result_context)
 		if result_is_rename then
 			---@cast param_names string
@@ -1000,11 +1002,11 @@ function inferrable_term_override_pretty:host_function_type(pp, context)
 	context = ensure_context(context)
 	local result_context = context
 	local param_is_tuple_type, param_desc = param_type:as_host_tuple_type()
-	local result_is_readable, param_name, _, result_body, anchor = result_type:as_annotated_lambda()
+	local result_is_readable, param_name, _, result_body, result_start_anchor, result_end_anchor = result_type:as_annotated_lambda()
 	local result_is_destructure, result_is_rename, param_names, result_is_tuple_type, result_desc
 	if result_is_readable then
 		result_context = result_context:append(param_name)
-		result_is_destructure, result_is_rename, param_names, result_body, result_context =
+		result_is_destructure, result_is_rename, param_names, result_body, result_context, result_start_anchor, result_end_anchor =
 			inferrable_destructure_helper(result_body, result_context)
 		if result_is_rename then
 			---@cast param_names string

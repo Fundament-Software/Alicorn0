@@ -27,11 +27,11 @@ function checkable:unwrap_host_tuple_cons() end
 function checkable:as_host_tuple_cons() end
 ---@return boolean
 function checkable:is_lambda() end
----@return string param_name
+---@return Symbol param_name
 ---@return checkable body
 function checkable:unwrap_lambda() end
 ---@return boolean
----@return string param_name
+---@return Symbol param_name
 ---@return checkable body
 function checkable:as_lambda() end
 
@@ -40,5 +40,5 @@ function checkable:as_lambda() end
 ---@field inferrable fun(inferrable_term: inferrable): checkable
 ---@field tuple_cons fun(elements: ArrayValue): checkable
 ---@field host_tuple_cons fun(elements: ArrayValue): checkable
----@field lambda fun(param_name: string, body: checkable): checkable
+---@field lambda fun(param_name: Symbol, body: checkable): checkable
 return {}

@@ -4,7 +4,7 @@
 ---@class (exact) placeholder_debug: RecordValue
 placeholder_debug = {}
 
----@return string
+---@return Symbol
 ---@return Anchor
 ---@return Anchor
 function placeholder_debug:unwrap_placeholder_debug() end
