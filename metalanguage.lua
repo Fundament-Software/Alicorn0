@@ -39,16 +39,11 @@ local MatcherKind = --[[@enum MatcherKind]]
 ---@field handler SymbolFunc | PairFunc | NilFunc | ValueFunc | ReducibleFunc
 ---@field reducible Reducible?
 
----@class SyntaxSymbol
----@field start_anchor Anchor
----@field end_anchor Anchor
----@field str string
-
 --[[
 issymbol : forall
 	implicit userdata : type
 	implicit results : tuple-desc
-	handler : (forall (u : userdata, s : SyntaxSymbol) -> res : tuple-type(results)))
+	handler : (forall (u : userdata, s : Symbol) -> res : tuple-type(results)))
 	->
 	Matcher(userdata, results)
 --]]
@@ -327,14 +322,14 @@ local function reducer(func, name)
 end
 
 ---@param expected string
----@param symbol SyntaxSymbol
+---@param symbol Symbol
 ---@return boolean
 ---@return string?
 local function symbolexacthandler(expected, symbol)
 	if symbol.str == expected then
 		return true
 	else
-		return false, "symbol is expected to be exactly " .. expected .. " but was instead " .. symbol.str
+		return false, "symbol is expected to be exactly " .. tostring(expected) .. " but was instead " .. tostring(symbol)
 	end
 end
 
@@ -505,12 +500,10 @@ local symbol_accepters = {
 	end,
 }
 
----@param start_anchor Anchor
----@param end_anchor Anchor
----@param syntaxsymbol SyntaxSymbol
+---@param syntax_symbol Symbol
 ---@return ConstructedSyntax
-local function symbol(start_anchor, end_anchor, syntaxsymbol)
-	return cons_syntax(symbol_accepters, start_anchor, end_anchor, syntaxsymbol)
+local function symbol(syntax_symbol)
+	return cons_syntax(symbol_accepters, syntax_symbol.start_anchor, syntax_symbol.end_anchor, syntax_symbol)
 end
 
 local value_accepters = {

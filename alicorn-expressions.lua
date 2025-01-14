@@ -24,7 +24,7 @@ local inferrable_array = array(inferrable_term)
 local typed_array = array(typed_term)
 local value_array = array(value)
 local usage_array = array(gen.builtin_number)
-local name_array = array(gen.builtin_string)
+local name_array = terms.symbol_array
 
 local param_info_implicit = value.param_info(value.visibility(visibility.implicit))
 local param_info_explicit = value.param_info(value.visibility(visibility.explicit))
@@ -37,6 +37,9 @@ local infer = evaluator.infer
 --local typechecker_state = evaluator.typechecker_state
 
 local format = require "format"
+local create_symbol = format.create_symbol
+local is_symbol = format.is_symbol
+local internal_symbols = format.internal_symbols
 local nil_anchor = format.nil_anchor
 
 local U = require "alicorn-utils"
@@ -212,12 +215,11 @@ local infix_data = {
 	-- # is the comment character and is forbidden here
 }
 
----@param symbol SyntaxSymbol
+---@param symbol Symbol
 ---@return boolean
----@return SyntaxSymbol | string
+---@return Symbol | string
 local function shunting_yard_prefix_handler(_, symbol)
-	assert(symbol and symbol["kind"])
-
+	assert(is_symbol(symbol))
 	if not prefix_data[(symbol.str):sub(1, 1)] or (symbol.str):find("_") then
 		return false,
 			"symbol was provided in a prefix operator place, but the symbol isn't a valid prefix operator: "
@@ -226,16 +228,16 @@ local function shunting_yard_prefix_handler(_, symbol)
 	return true, symbol
 end
 
----@param symbol SyntaxSymbol
+---@param symbol Symbol
 ---@param a ConstructedSyntax
 ---@param b ConstructedSyntax
 ---@return boolean
 ---@return boolean|string
----@return SyntaxSymbol?
+---@return Symbol?
 ---@return ConstructedSyntax?
 ---@return ConstructedSyntax?
 local function shunting_yard_infix_handler(_, symbol, a, b)
-	assert(symbol and symbol["kind"])
+	assert(is_symbol(symbol))
 	if not infix_data[(symbol.str):sub(1, 1)] or (symbol.str):find("_") then
 		return false,
 			"symbol was provided in an infix operator place, but the symbol isn't a valid infix operator: "
@@ -252,7 +254,7 @@ end
 
 ---@class (exact) TaggedOperator
 ---@field type OperatorType
----@field symbol SyntaxSymbol
+---@field symbol Symbol
 
 ---@param yard { n: integer, [integer]: TaggedOperator }
 ---@param output { n: integer, [integer]: ConstructedSyntax }
@@ -295,11 +297,11 @@ local function shunting_yard_pop(yard, output, start_anchor, end_anchor)
 	end
 end
 
----@param new_symbol SyntaxSymbol
+---@param new_symbol Symbol
 ---@param yard_operator TaggedOperator
 ---@return boolean
 local function shunting_yard_should_pop(new_symbol, yard_operator)
-	assert(new_symbol and new_symbol["kind"])
+	assert(is_symbol(new_symbol))
 
 	-- new_symbol is always infix, as we never pop while adding a prefix operator
 	-- prefix operators always have higher precedence than infix operators
@@ -350,7 +352,7 @@ local function shunting_yard(a, b, yard, output, start_anchor, end_anchor)
 	-- first, collect all prefix operators
 	local is_prefix, prefix_symbol =
 		a:match({ metalanguage.issymbol(shunting_yard_prefix_handler) }, metalanguage.failure_handler, nil)
-	---@cast prefix_symbol SyntaxSymbol
+	---@cast prefix_symbol Symbol
 	if is_prefix then
 		local ok, next_a, next_b =
 			b:match({ metalanguage.ispair(metalanguage.accept_handler) }, metalanguage.failure_handler, nil)
@@ -382,7 +384,7 @@ local function shunting_yard(a, b, yard, output, start_anchor, end_anchor)
 		return ok, more
 	end
 	if infix_symbol then
-		assert(infix_symbol["kind"])
+		assert(is_symbol(infix_symbol))
 	end
 	if not more then
 		while yard.n > 0 do
@@ -401,7 +403,7 @@ local function shunting_yard(a, b, yard, output, start_anchor, end_anchor)
 	return shunting_yard(next_a, next_b, yard, output, start_anchor, end_anchor)
 end
 
----@param symbol SyntaxSymbol
+---@param symbol Symbol
 ---@param arg ConstructedSyntax
 ---@return boolean
 ---@return OperatorType|string
@@ -417,7 +419,7 @@ local function expression_prefix_handler(_, symbol, arg)
 end
 
 ---@param left ConstructedSyntax
----@param symbol SyntaxSymbol
+---@param symbol Symbol
 ---@param right ConstructedSyntax
 ---@return boolean
 ---@return OperatorType|string
@@ -425,7 +427,7 @@ end
 ---@return ConstructedSyntax?
 ---@return ConstructedSyntax?
 local function expression_infix_handler(_, left, symbol, right)
-	assert(symbol and symbol["kind"])
+	assert(is_symbol(symbol))
 
 	if not infix_data[(symbol.str):sub(1, 1)] or (symbol.str):find("_") then
 		return false,
@@ -864,44 +866,32 @@ local function expression_pairhandler(args, a, b)
 	return false, "unknown type for pairhandler " .. type_of_term.kind, env
 end
 
----@param symbol SyntaxSymbol
----@return SyntaxSymbol
----@return SyntaxSymbol?
+---@param symbol Symbol
+---@return Symbol
+---@return Symbol?
 local function split_dot_accessors(symbol)
-	if symbol then
-		local split_dot_pos = (symbol.str):find("%.")
+	local split_dot_pos = (symbol.str):find("%.")
 
-		if split_dot_pos then
-			local first, second = (symbol.str):match("([^.]+)%.(.+)")
+	if split_dot_pos then
+		local first, second = (symbol.str):match("([^.]+)%.(.+)")
 
-			local first_end_anchor = symbol.end_anchor
-			first_end_anchor.char = symbol.start_anchor.char + split_dot_pos
+		local first_end_anchor = symbol.end_anchor
+		first_end_anchor.char = symbol.start_anchor.char + split_dot_pos
+		local first_symbol = create_symbol(first, symbol.start_anchor, first_end_anchor)
 
-			local firstsymbol = {
-				kind = "symbol",
-				str = first,
-				start_anchor = symbol.start_anchor,
-				end_anchor = first_end_anchor,
-			}
+		-- we can assume it is on the same line.
+		local second_start_anchor = symbol.start_anchor
+		second_start_anchor.char = second_start_anchor.char + split_dot_pos
+		local second_symbol = create_symbol(second, second_start_anchor, symbol.end_anchor)
 
-			-- we can assume it is on the same line.
-			local second_start_anchor = symbol.start_anchor
-			second_start_anchor.char = second_start_anchor.char + split_dot_pos
-
-			local secondsymbol = {
-				kind = "symbol",
-				str = second,
-				start_anchor = second_start_anchor,
-				end_anchor = symbol.end_anchor,
-			}
-
-			return firstsymbol, secondsymbol
-		end
+		return first_symbol, second_symbol
+	else
+		return symbol
 	end
 end
 
 ---@param args ExpressionArgs
----@param name SyntaxSymbol
+---@param name Symbol
 ---@return boolean
 ---@return inferrable | checkable | string
 ---@return Environment?
@@ -912,58 +902,24 @@ local function expression_symbolhandler(args, name)
 	--print(name, split_dot_accessors(name))
 	local front, rest = split_dot_accessors(name)
 
-	assert(name["kind"])
-
-	if front then
-		assert(front["kind"])
-	end
-
-	if not front then
-		local ok, val = env:get(name.str)
-		if not ok then
-			---@cast val string
-			return ok, val, env
-		end
-		---@cast val -string
-		if goal:is_check() then
-			return true, checkable_term.inferrable(val), env
-		end
-		return ok, val, env
-	else
-		local ok, part = env:get(front.str)
-		if not ok then
-			---@cast part string
-			return false, part, env
-		end
-		---@cast part -string
-		while front do
-			name = rest
-			front, rest = split_dot_accessors(name)
-			assert(front.str)
-			local namearray
-			if front then
-				assert(front["kind"])
-			end
-
-			if front and front.str then
-				namearray = front.str
-			else
-				assert(name)
-				assert(name.str)
-				namearray = name.str
-			end
-
-			part = inferrable_term.record_elim(
-				part,
-				name_array(namearray),
-				inferrable_term.bound_variable(env.typechecking_context:len() + 1, U.bound_here())
-			)
-		end
-		if goal:is_check() then
-			return true, checkable_term.inferrable(part), env
-		end
+	local ok, part = env:get(front.str)
+	if not ok then
+		---@cast part string
 		return ok, part, env
 	end
+	---@cast part -string
+	while rest do
+		front, rest = split_dot_accessors(rest)
+		part = inferrable_term.record_elim(
+			part,
+			name_array(front),
+			inferrable_term.bound_variable(env.typechecking_context:len() + 1, U.bound_here())
+		)
+	end
+	if goal:is_check() then
+		return true, checkable_term.inferrable(part), env
+	end
+	return ok, part, env
 end
 
 ---@param args ExpressionArgs
@@ -1135,15 +1091,15 @@ local function host_operative(fn, name)
 	end
 	local tuple_conv = typed_term.tuple_cons(tuple_conv_elements)
 	local host_tuple_conv = typed_term.host_tuple_cons(host_tuple_conv_elements)
-	local param_names = name_array("#syntax", "#env", "#userdata", "#goal")
+	local param_names = name_array(internal_symbols["#syntax"], internal_symbols["#env"], internal_symbols["#userdata"], internal_symbols["#goal"])
 	local tuple_to_host_tuple =
 		typed_term.tuple_elim(param_names, typed_term.bound_variable(1, U.bound_here()), nparams, host_tuple_conv)
 	local tuple_to_host_tuple_fn = typed_term.application(typed_host_fn, tuple_to_host_tuple)
-	local result_names = name_array("#term", "#env")
+	local result_names = name_array(internal_symbols["#term"], internal_symbols["#env"])
 	local tuple_to_tuple_fn = typed_term.tuple_elim(result_names, tuple_to_host_tuple_fn, 2, tuple_conv)
 	-- 3: wrap it in a closure with an empty capture, not a typed lambda
 	-- this ensures variable 1 is the argument tuple
-	local value_fn = value.closure("#" .. name .. "_PARAM", tuple_to_tuple_fn, runtime_context(), U.bound_here())
+	local value_fn = value.closure(create_symbol("#" .. name .. "_PARAM", nil_anchor, nil_anchor), tuple_to_tuple_fn, runtime_context(), U.bound_here())
 
 	local userdata_type = value.tuple_type(terms.empty)
 	return inferrable_term.typed(
@@ -1222,7 +1178,7 @@ collect_tuple = metalanguage.reducer(
 					desc = terms.cons(
 						desc,
 						value.closure(
-							"#collect-tuple-param",
+							internal_symbols["#collect-tuple-param"],
 							typed_term.literal(value.singleton(next_elem_type, next_val)),
 							env.typechecking_context.runtime_context,
 							U.bound_here()
@@ -1319,7 +1275,7 @@ collect_host_tuple = metalanguage.reducer(
 					desc = terms.cons(
 						desc,
 						value.closure(
-							"#collect-host-tuple-param",
+							internal_symbols["#collect-host-tuple-param"],
 							typed_term.literal(value.singleton(next_elem_type, next_val)),
 							env.typechecking_context.runtime_context,
 							U.bound_here()

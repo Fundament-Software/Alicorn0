@@ -22,12 +22,12 @@ function typed:unwrap_literal() end
 function typed:as_literal() end
 ---@return boolean
 function typed:is_lambda() end
----@return string param_name
+---@return Symbol param_name
 ---@return typed body
 ---@return Anchor start_anchor
 function typed:unwrap_lambda() end
 ---@return boolean
----@return string param_name
+---@return Symbol param_name
 ---@return typed body
 ---@return Anchor start_anchor
 function typed:as_lambda() end
@@ -55,12 +55,12 @@ function typed:unwrap_application() end
 function typed:as_application() end
 ---@return boolean
 function typed:is_let() end
----@return string name
+---@return Symbol name
 ---@return typed expr
 ---@return typed body
 function typed:unwrap_let() end
 ---@return boolean
----@return string name
+---@return Symbol name
 ---@return typed expr
 ---@return typed body
 function typed:as_let() end
@@ -180,11 +180,11 @@ function typed:unwrap_record_elim() end
 function typed:as_record_elim() end
 ---@return boolean
 function typed:is_enum_cons() end
----@return string constructor
+---@return Symbol constructor
 ---@return typed arg
 function typed:unwrap_enum_cons() end
 ---@return boolean
----@return string constructor
+---@return Symbol constructor
 ---@return typed arg
 function typed:as_enum_cons() end
 ---@return boolean
@@ -530,10 +530,10 @@ function typed:as_constrained_type() end
 ---@field define_enum fun(self: typedType, name: string, variants: Variants): typedType
 ---@field bound_variable fun(index: number, debug: any): typed
 ---@field literal fun(literal_value: value): typed
----@field lambda fun(param_name: string, body: typed, start_anchor: Anchor): typed
+---@field lambda fun(param_name: Symbol, body: typed, start_anchor: Anchor): typed
 ---@field pi fun(param_type: typed, param_info: typed, result_type: typed, result_info: typed): typed
 ---@field application fun(f: typed, arg: typed): typed
----@field let fun(name: string, expr: typed, body: typed): typed
+---@field let fun(name: Symbol, expr: typed, body: typed): typed
 ---@field level_type typed
 ---@field level0 typed
 ---@field level_suc fun(previous_level: typed): typed
@@ -548,7 +548,7 @@ function typed:as_constrained_type() end
 ---@field record_cons fun(fields: MapValue): typed
 ---@field record_extend fun(base: typed, fields: MapValue): typed
 ---@field record_elim fun(subject: typed, field_names: ArrayValue, body: typed): typed
----@field enum_cons fun(constructor: string, arg: typed): typed
+---@field enum_cons fun(constructor: Symbol, arg: typed): typed
 ---@field enum_elim fun(subject: typed, mechanism: typed): typed
 ---@field enum_rec_elim fun(subject: typed, mechanism: typed): typed
 ---@field enum_desc_cons fun(variants: MapValue, rest: typed): typed

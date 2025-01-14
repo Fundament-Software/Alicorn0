@@ -26,7 +26,7 @@ function inferrable:unwrap_typed() end
 function inferrable:as_typed() end
 ---@return boolean
 function inferrable:is_annotated_lambda() end
----@return string param_name
+---@return Symbol param_name
 ---@return inferrable param_annotation
 ---@return inferrable body
 ---@return Anchor start_anchor
@@ -35,7 +35,7 @@ function inferrable:is_annotated_lambda() end
 ---@return checkable pure
 function inferrable:unwrap_annotated_lambda() end
 ---@return boolean
----@return string param_name
+---@return Symbol param_name
 ---@return inferrable param_annotation
 ---@return inferrable body
 ---@return Anchor start_anchor
@@ -77,11 +77,15 @@ function inferrable:is_tuple_elim() end
 ---@return ArrayValue names
 ---@return inferrable subject
 ---@return inferrable body
+---@return Anchor start_anchor
+---@return Anchor end_anchor
 function inferrable:unwrap_tuple_elim() end
 ---@return boolean
 ---@return ArrayValue names
 ---@return inferrable subject
 ---@return inferrable body
+---@return Anchor start_anchor
+---@return Anchor end_anchor
 function inferrable:as_tuple_elim() end
 ---@return boolean
 function inferrable:is_tuple_type() end
@@ -110,11 +114,11 @@ function inferrable:unwrap_record_elim() end
 function inferrable:as_record_elim() end
 ---@return boolean
 function inferrable:is_enum_cons() end
----@return string constructor
+---@return Symbol constructor
 ---@return inferrable arg
 function inferrable:unwrap_enum_cons() end
 ---@return boolean
----@return string constructor
+---@return Symbol constructor
 ---@return inferrable arg
 function inferrable:as_enum_cons() end
 ---@return boolean
@@ -178,14 +182,18 @@ function inferrable:unwrap_object_elim() end
 function inferrable:as_object_elim() end
 ---@return boolean
 function inferrable:is_let() end
----@return string name
+---@return Symbol name
 ---@return inferrable expr
 ---@return inferrable body
+---@return Anchor start_anchor
+---@return Anchor end_anchor
 function inferrable:unwrap_let() end
 ---@return boolean
----@return string name
+---@return Symbol name
 ---@return inferrable expr
 ---@return inferrable body
+---@return Anchor start_anchor
+---@return Anchor end_anchor
 function inferrable:as_let() end
 ---@return boolean
 function inferrable:is_operative_cons() end
@@ -376,15 +384,15 @@ function inferrable:as_program_type() end
 ---@field define_enum fun(self: inferrableType, name: string, variants: Variants): inferrableType
 ---@field bound_variable fun(index: number, debug: any): inferrable
 ---@field typed fun(type: value, usage_counts: ArrayValue, typed_term: typed): inferrable
----@field annotated_lambda fun(param_name: string, param_annotation: inferrable, body: inferrable, start_anchor: Anchor, end_anchor: Anchor, visible: visibility, pure: checkable): inferrable
+---@field annotated_lambda fun(param_name: Symbol, param_annotation: inferrable, body: inferrable, start_anchor: Anchor, end_anchor: Anchor, visible: visibility, pure: checkable): inferrable
 ---@field pi fun(param_type: inferrable, param_info: checkable, result_type: inferrable, result_info: checkable): inferrable
 ---@field application fun(f: inferrable, arg: checkable): inferrable
 ---@field tuple_cons fun(elements: ArrayValue): inferrable
----@field tuple_elim fun(names: ArrayValue, subject: inferrable, body: inferrable): inferrable
+---@field tuple_elim fun(names: ArrayValue, subject: inferrable, body: inferrable, start_anchor: Anchor, end_anchor: Anchor): inferrable
 ---@field tuple_type fun(desc: inferrable): inferrable
 ---@field record_cons fun(fields: MapValue): inferrable
 ---@field record_elim fun(subject: inferrable, field_names: ArrayValue, body: inferrable): inferrable
----@field enum_cons fun(constructor: string, arg: inferrable): inferrable
+---@field enum_cons fun(constructor: Symbol, arg: inferrable): inferrable
 ---@field enum_desc_cons fun(variants: MapValue, rest: inferrable): inferrable
 ---@field enum_elim fun(subject: inferrable, mechanism: inferrable): inferrable
 ---@field enum_type fun(desc: inferrable): inferrable
@@ -392,7 +400,7 @@ function inferrable:as_program_type() end
 ---@field enum_absurd fun(target: inferrable, debug: string): inferrable
 ---@field object_cons fun(methods: MapValue): inferrable
 ---@field object_elim fun(subject: inferrable, mechanism: inferrable): inferrable
----@field let fun(name: string, expr: inferrable, body: inferrable): inferrable
+---@field let fun(name: Symbol, expr: inferrable, body: inferrable, start_anchor: Anchor, end_anchor: Anchor): inferrable
 ---@field operative_cons fun(operative_type: inferrable, userdata: inferrable): inferrable
 ---@field operative_type_cons fun(handler: checkable, userdata_type: inferrable): inferrable
 ---@field level_type inferrable

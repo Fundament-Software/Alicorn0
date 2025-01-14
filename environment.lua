@@ -57,18 +57,18 @@ local environment = {}
 ---@class ShadowEnvironment
 ---@field shadowed Environment
 
----@param name string
+---@param name Symbol
 ---@return boolean
 ---@return inferrable|string
 function environment:get(name)
-	local present, binding = self.in_scope:get(name)
+	local present, binding = self.in_scope:get(name.str)
 	if not present then
-		return false, 'symbol "' .. name .. '" is not in scope'
+		return false, 'symbol "' .. tostring(name) .. '" is not in scope'
 	end
 	if binding == nil then
 		return false,
 			'symbol "'
-				.. name
+				.. tostring(name)
 				.. '" is marked as present but with no data; this indicates a bug in the environment or something violating encapsulation'
 	end
 	return true, binding
@@ -95,7 +95,7 @@ function environment:bind_local(binding)
 		error("nyi environment dependent purity")
 	end
 	if binding:is_let() then
-		local name, expr = binding:unwrap_let()
+		local name, expr, start_anchor, end_anchor = binding:unwrap_let()
 		local expr_type, expr_usages, expr_term = infer(expr, self.typechecking_context)
 		if terms.value.value_check(expr_type) ~= true then
 			print("expr", expr)
@@ -103,7 +103,7 @@ function environment:bind_local(binding)
 		end
 		local n = self.typechecking_context:len()
 		local term = inferrable_term.bound_variable(n + 1, U.bound_here())
-		local locals = self.locals:put(name, term)
+		local locals = self.locals:put(name.str, term)
 		local evaled = evaluator.evaluate(expr_term, self.typechecking_context.runtime_context)
 		-- print "doing let binding"
 		-- print(expr:pretty_print())
@@ -116,7 +116,7 @@ function environment:bind_local(binding)
 			typechecking_context = typechecking_context,
 		})
 	elseif binding:is_tuple_elim() then
-		local names, subject = binding:unwrap_tuple_elim()
+		local names, subject, start_anchor, end_anchor = binding:unwrap_tuple_elim()
 		local subject_type, subject_usages, subject_term = infer(subject, self.typechecking_context)
 		--local subject_qty, subject_type = subject_type:unwrap_qtype()
 		--DEBUG:
@@ -371,11 +371,11 @@ function environment:exit_block(term, shadowed)
 			error "missing binding"
 		end
 		if binding:is_let() then
-			local name, expr = binding:unwrap_let()
-			wrapped = terms.inferrable_term.let(name, expr, wrapped)
+			local name, expr, start_anchor, end_anchor = binding:unwrap_let()
+			wrapped = terms.inferrable_term.let(name, expr, wrapped, start_anchor, end_anchor)
 		elseif binding:is_tuple_elim() then
-			local names, subject = binding:unwrap_tuple_elim()
-			wrapped = terms.inferrable_term.tuple_elim(names, subject, wrapped)
+			local names, subject, start_anchor, end_anchor = binding:unwrap_tuple_elim()
+			wrapped = terms.inferrable_term.tuple_elim(names, subject, wrapped, start_anchor, end_anchor)
 		elseif binding:is_annotated_lambda() then
 			local name, annotation, start_anchor, end_anchor, visible, purity = binding:unwrap_annotated_lambda()
 			wrapped = terms.inferrable_term.annotated_lambda(name, annotation, wrapped, start_anchor, end_anchor, visible, purity)

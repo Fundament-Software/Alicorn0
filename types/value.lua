@@ -58,13 +58,13 @@ function value:unwrap_pi() end
 function value:as_pi() end
 ---@return boolean
 function value:is_closure() end
----@return string param_name
+---@return Symbol param_name
 ---@return typed code
 ---@return RuntimeContext capture
 ---@return any debug
 function value:unwrap_closure() end
 ---@return boolean
----@return string param_name
+---@return Symbol param_name
 ---@return typed code
 ---@return RuntimeContext capture
 ---@return any debug
@@ -88,10 +88,10 @@ function value:unwrap_name_type() end
 function value:as_name_type() end
 ---@return boolean
 function value:is_name() end
----@return string name
+---@return Symbol name
 function value:unwrap_name() end
 ---@return boolean
----@return string name
+---@return Symbol name
 function value:as_name() end
 ---@return boolean
 function value:is_operative_value() end
@@ -132,11 +132,11 @@ function value:unwrap_tuple_desc_type() end
 function value:as_tuple_desc_type() end
 ---@return boolean
 function value:is_enum_value() end
----@return string constructor
+---@return Symbol constructor
 ---@return value arg
 function value:unwrap_enum_value() end
 ---@return boolean
----@return string constructor
+---@return Symbol constructor
 ---@return value arg
 function value:as_enum_value() end
 ---@return boolean
@@ -452,16 +452,16 @@ function value:as_union_type() end
 ---@field result_info_type value
 ---@field result_info fun(result_info: result_info): value
 ---@field pi fun(param_type: value, param_info: value, result_type: value, result_info: value): value
----@field closure fun(param_name: string, code: typed, capture: RuntimeContext, debug: any): value
+---@field closure fun(param_name: Symbol, code: typed, capture: RuntimeContext, debug: any): value
 ---@field range fun(lower_bounds: ArrayValue, upper_bounds: ArrayValue, relation: value): value
 ---@field name_type value
----@field name fun(name: string): value
+---@field name fun(name: Symbol): value
 ---@field operative_value fun(userdata: value): value
 ---@field operative_type fun(handler: value, userdata_type: value): value
 ---@field tuple_value fun(elements: ArrayValue): value
 ---@field tuple_type fun(desc: value): value
 ---@field tuple_desc_type fun(universe: value): value
----@field enum_value fun(constructor: string, arg: value): value
+---@field enum_value fun(constructor: Symbol, arg: value): value
 ---@field enum_type fun(desc: value): value
 ---@field enum_desc_type fun(universe: value): value
 ---@field enum_desc_value fun(variants: MapValue): value

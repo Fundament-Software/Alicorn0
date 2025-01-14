@@ -98,7 +98,7 @@ local function get_op_impl(syntax, env)
 	if not ok then
 		return ok, modval
 	end
-	print("module get", ok, modval, env, symbol.str)
+	print("module get", ok, modval, env, tostring(symbol))
 	if not modval.type == module_type then
 		return false, "first argument of module get must be a module"
 	end

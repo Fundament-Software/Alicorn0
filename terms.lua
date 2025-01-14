@@ -16,6 +16,8 @@ local traits = require "traits"
 
 local format = require "format"
 
+local nil_anchor = format.nil_anchor
+
 local map = gen.declare_map
 local array = gen.declare_array
 local set = gen.declare_set
@@ -60,6 +62,9 @@ local metavariable_mt = { __index = Metavariable }
 local metavariable_type = gen.declare_foreign(gen.metatable_equality(metavariable_mt), "Metavariable")
 
 local anchor_type = gen.declare_foreign(gen.metatable_equality(format.anchor_mt), "Anchor")
+local symbol_type = gen.declare_foreign(gen.metatable_equality(format.symbol_mt), "Symbol")
+
+local symbol_array = array(symbol_type)
 
 ---@class RuntimeContext
 ---@field bindings FibonacciBuffer
@@ -361,15 +366,15 @@ function TypecheckingContext:get_runtime_context()
 	return self.runtime_context
 end
 
----@param name string
+---@param name Symbol
 ---@param type value
 ---@param val value?
 ---@param start_anchor Anchor?
 ---@param end_anchor Anchor?
 ---@return TypecheckingContext
 function TypecheckingContext:append(name, type, val, start_anchor, end_anchor)
-	if gen.builtin_string.value_check(name) ~= true then
-		error("TypecheckingContext:append parameter 'name' must be a string")
+	if symbol_type.value_check(name) ~= true then
+		error("TypecheckingContext:append parameter 'name' must be a Symbol")
 	end
 	if value.value_check(type) ~= true then
 		print("type", type)
@@ -480,15 +485,19 @@ expression_goal:define_enum("expression_goal", {
 -- stylua: ignore
 binding:define_enum("binding", {
 	{ "let", {
-		"name", gen.builtin_string,
-		"expr", inferrable_term,
+		"name",         symbol_type,
+		"expr",         inferrable_term,
+		"start_anchor", anchor_type,
+		"end_anchor",   anchor_type,
 	} },
 	{ "tuple_elim", {
-		"names",   array(gen.builtin_string),
+		"names",   symbol_array,
 		"subject", inferrable_term,
+		"start_anchor", anchor_type,
+		"end_anchor",   anchor_type,
 	} },
 	{ "annotated_lambda", {
-		"param_name",       gen.builtin_string,
+		"param_name",       symbol_type,
 		"param_annotation", inferrable_term,
 		"start_anchor",     anchor_type,
 		"end_anchor",       anchor_type,
@@ -509,7 +518,7 @@ checkable_term:define_enum("checkable", {
 	{ "tuple_cons", { "elements", array(checkable_term) } },
 	{ "host_tuple_cons", { "elements", array(checkable_term) } },
 	{ "lambda", {
-		"param_name", gen.builtin_string,
+		"param_name", symbol_type,
 		"body",       checkable_term,
 	} },
 })
@@ -523,7 +532,7 @@ inferrable_term:define_enum("inferrable", {
 		"typed_term",   typed_term,
 	} },
 	{ "annotated_lambda", {
-		"param_name",       gen.builtin_string,
+		"param_name",       symbol_type,
 		"param_annotation", inferrable_term,
 		"body",             inferrable_term,
 		"start_anchor",     anchor_type,
@@ -543,23 +552,25 @@ inferrable_term:define_enum("inferrable", {
 	} },
 	{ "tuple_cons", { "elements", array(inferrable_term) } },
 	{ "tuple_elim", {
-		"names",   array(gen.builtin_string),
+		"names",   symbol_array,
 		"subject", inferrable_term,
 		"body",    inferrable_term,
+		"start_anchor", anchor_type,
+		"end_anchor",   anchor_type,
 	} },
 	{ "tuple_type", { "desc", inferrable_term } },
-	{ "record_cons", { "fields", map(gen.builtin_string, inferrable_term) } },
+	{ "record_cons", { "fields", map(symbol_type, inferrable_term) } },
 	{ "record_elim", {
 		"subject",     inferrable_term,
-		"field_names", array(gen.builtin_string),
+		"field_names", symbol_array,
 		"body",        inferrable_term,
 	} },
 	{ "enum_cons", {
-		"constructor", gen.builtin_string,
+		"constructor", symbol_type,
 		"arg",         inferrable_term,
 	} },
 	{ "enum_desc_cons", {
-		"variants", map(gen.builtin_string, inferrable_term),
+		"variants", map(symbol_type, inferrable_term),
 		"rest",     inferrable_term,
 } },
 	{ "enum_elim", {
@@ -569,7 +580,7 @@ inferrable_term:define_enum("inferrable", {
 	{ "enum_type", { "desc", inferrable_term } },
 	{ "enum_case", {
 		"target",   inferrable_term,
-		"variants", map(gen.builtin_string, inferrable_term),
+		"variants", map(symbol_type, inferrable_term),
 		--"default",  inferrable_term,
 	} },
 	{ "enum_absurd", {
@@ -577,15 +588,17 @@ inferrable_term:define_enum("inferrable", {
 		"debug",  gen.builtin_string,
 	} },
 	
-	{ "object_cons", { "methods", map(gen.builtin_string, inferrable_term) } },
+	{ "object_cons", { "methods", map(symbol_type, inferrable_term) } },
 	{ "object_elim", {
 		"subject",   inferrable_term,
 		"mechanism", inferrable_term,
 	} },
 	{ "let", {
-		"name", gen.builtin_string,
-		"expr", inferrable_term,
-		"body", inferrable_term,
+		"name",         symbol_type,
+		"expr",         inferrable_term,
+		"body",         inferrable_term,
+		"start_anchor", anchor_type,
+		"end_anchor",   anchor_type,
 	} },
 	{ "operative_cons", {
 		"operative_type", inferrable_term,
@@ -758,7 +771,7 @@ typed_term:define_enum("typed", {
 	{ "bound_variable", { "index", gen.builtin_number, "debug", gen.any_lua_type  } },
 	{ "literal", { "literal_value", value } },
 	{ "lambda", {
-		"param_name", gen.builtin_string,
+		"param_name", symbol_type,
 		"body",       typed_term,
 		"start_anchor",     anchor_type,
 	} },
@@ -773,7 +786,7 @@ typed_term:define_enum("typed", {
 		"arg", typed_term,
 	} },
 	{ "let", {
-		"name", gen.builtin_string,
+		"name", symbol_type,
 		"expr", typed_term,
 		"body", typed_term,
 	} },
@@ -789,7 +802,7 @@ typed_term:define_enum("typed", {
 	{ "tuple_cons", { "elements", array(typed_term) } },
 	--{"tuple_extend", {"base", typed_term, "fields", array(typed_term)}}, -- maybe?
 	{ "tuple_elim", {
-		"names",   array(gen.builtin_string),
+		"names",   symbol_array,
 		"subject", typed_term,
 		"length",  gen.builtin_number,
 		"body",    typed_term,
@@ -800,19 +813,19 @@ typed_term:define_enum("typed", {
 	} },
 	{ "tuple_type", { "desc", typed_term } },
 	{ "tuple_desc_type", { "universe", typed_term } },
-	{ "record_cons", { "fields", map(gen.builtin_string, typed_term) } },
+	{ "record_cons", { "fields", map(symbol_type, typed_term) } },
 	{ "record_extend", {
 		"base",   typed_term,
-		"fields", map(gen.builtin_string, typed_term),
+		"fields", map(symbol_type, typed_term),
 	} },
 	{ "record_elim", {
 		"subject",     typed_term,
-		"field_names", array(gen.builtin_string),
+		"field_names", symbol_array,
 		"body",        typed_term,
 	} },
 	--TODO record elim
 	{ "enum_cons", {
-		"constructor", gen.builtin_string,
+		"constructor", symbol_type,
 		"arg",         typed_term,
 	} },
 	{ "enum_elim", {
@@ -824,7 +837,7 @@ typed_term:define_enum("typed", {
 		"mechanism", typed_term,
 	} },
 	{ "enum_desc_cons", {
-		"variants", map(gen.builtin_string, typed_term),
+		"variants", map(symbol_type, typed_term),
 		"rest",     typed_term,
 	} },
 	{ "enum_desc_type", {
@@ -833,15 +846,15 @@ typed_term:define_enum("typed", {
 	{ "enum_type", { "desc", typed_term } },
 	{ "enum_case", {
 		"target",   typed_term,
-		"variants", map(gen.builtin_string, typed_term),
+		"variants", map(symbol_type, typed_term),
 		"default",  typed_term,
 	} },
 	{ "enum_absurd", {
 		"target", typed_term,
 		"debug",  gen.builtin_string,
 	} },
-	{ "object_cons", { "methods", map(gen.builtin_string, typed_term) } },
-	{ "object_corec_cons", { "methods", map(gen.builtin_string, typed_term) } },
+	{ "object_cons", { "methods", map(symbol_type, typed_term) } },
+	{ "object_corec_cons", { "methods", map(symbol_type, typed_term) } },
 	{ "object_elim", {
 		"subject",   typed_term,
 		"mechanism", typed_term,
@@ -943,7 +956,7 @@ typed_term:define_enum("typed", {
 
 -- stylua: ignore
 placeholder_debug:define_record("placeholder_debug", {
-	"name",         gen.builtin_string,
+	"name",         symbol_type,
 	"start_anchor", anchor_type,
 	"end_anchor",   anchor_type,
 })
@@ -1050,7 +1063,7 @@ value:define_enum("value", {
 	-- closure is a type that contains a typed term corresponding to the body
 	-- and a runtime context representng the bound context where the closure was created
 	{ "closure", {
-		"param_name", gen.builtin_string,
+		"param_name", symbol_type,
 		"code",       typed_term,
 		"capture",    runtime_context_type,
 		"debug", 			gen.any_lua_type,
@@ -1080,7 +1093,7 @@ value:define_enum("value", {
 	--{"typechecker_monad_value", }, -- TODO
 	--{"typechecker_monad_type", {"wrapped_type", value}},
 	{ "name_type" },
-	{ "name", { "name", gen.builtin_string } },
+	{ "name", { "name", symbol_type } },
 	{ "operative_value", { "userdata", value } },
 	{ "operative_type", {
 		"handler",       value,
@@ -1092,21 +1105,21 @@ value:define_enum("value", {
 	{ "tuple_type", { "desc", value } },
 	{ "tuple_desc_type", { "universe", value } },
 	{ "enum_value", {
-		"constructor", gen.builtin_string,
+		"constructor", symbol_type,
 		"arg",         value,
 	} },
 	{ "enum_type", { "desc", value } },
 	{ "enum_desc_type", { "universe", value } },
-	{ "enum_desc_value", { "variants", gen.declare_map(gen.builtin_string, value) } },
-	{ "record_value", { "fields", map(gen.builtin_string, value) } },
+	{ "enum_desc_value", { "variants", gen.declare_map(symbol_type, value) } },
+	{ "record_value", { "fields", map(symbol_type, value) } },
 	{ "record_type", { "desc", value } },
 	{ "record_desc_type", { "universe", value } },
 	{ "record_extend_stuck", {
 		"base",      neutral_value,
-		"extension", map(gen.builtin_string, value),
+		"extension", map(symbol_type, value),
 	} },
 	{ "object_value", {
-		"methods", map(gen.builtin_string, typed_term),
+		"methods", map(symbol_type, typed_term),
 		"capture", runtime_context_type,
 	} },
 	{ "object_type", { "desc", value } },
@@ -1213,7 +1226,7 @@ neutral_value:define_enum("neutral_value", {
 	} },
 	{ "record_field_access_stuck", {
 		"subject",    neutral_value,
-		"field_name", gen.builtin_string,
+		"field_name", symbol_type,
 	} },
 	{ "host_application_stuck", {
 		"function", gen.any_lua_type,
@@ -1252,8 +1265,8 @@ local host_lua_error_type = value.host_user_defined_type({ name = "lua_error_typ
 ---@class DescConsContainer
 local DescCons = --[[@enum DescCons]]
 	{
-		cons = "cons",
-		empty = "empty",
+		cons = format.internal_symbols["cons"],
+		empty = format.internal_symbols["empty"],
 	}
 
 local value_array = array(value)
@@ -1298,6 +1311,9 @@ local TCState =
 local lua_prog = effect_id(effect_registry:register("lua_prog", "running effectful lua code"), set(unique_id)())
 
 local terms = {
+	anchor_type = anchor_type,
+	symbol_type = symbol_type,
+	symbol_array = symbol_array,
 	metavariable_mt = metavariable_mt,
 	checkable_term = checkable_term, -- {}
 	inferrable_term = inferrable_term, -- {}

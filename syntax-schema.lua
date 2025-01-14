@@ -12,6 +12,12 @@ S:struct "anchor" "The source position information attached to a node" {
 	schema.u32 "char"(2) "the offset within the line",
 }
 
+S:struct "symbol" "A string from the source" {
+	schema.text "str"(0) "the string",
+	S.export.anchor "start_anchor"(1),
+	S.export.anchor "end_anchor"(2),
+}
+
 local element = S:addstruct("element")
 
 element:define {
@@ -21,52 +27,49 @@ element:define {
 			schema.list(element) "elements"(3),
 			S.export.anchor "end_anchor"(4),
 		},
-		schema.variant "symbol"(5) {
-			schema.text "str"(6),
+		schema.variant "string"(5) {
+			schema.list(element) "elements"(6) "A string contains a list of elements corresponding to parts of the literal. Every splice becomes a separate element, and the region between them is a literal byte buffer element",
+			S.export.anchor "end_anchor"(7),
 		},
-		schema.variant "string"(7) {
-			schema.list(element) "elements"(8) "A string contains a list of elements corresponding to parts of the literal. Every splice becomes a separate element, and the region between them is a literal byte buffer element",
-			S.export.anchor "end_anchor"(9),
-		},
-		schema.variant "literal"(10) {
-			schema.union "literaltype"(11) {
-				schema.variant "u8"(12) {
-					schema.u8 "val"(13),
+		schema.variant "literal"(8) {
+			schema.union "literaltype"(9) {
+				schema.variant "u8"(10) {
+					schema.u8 "val"(11),
 				},
-				schema.variant "i8"(14) {
-					schema.i8 "val"(15),
+				schema.variant "i8"(12) {
+					schema.i8 "val"(13),
 				},
-				schema.variant "u16"(16) {
-					schema.u16 "val"(17),
+				schema.variant "u16"(14) {
+					schema.u16 "val"(15),
 				},
-				schema.variant "i16"(18) {
-					schema.i16 "val"(19),
+				schema.variant "i16"(16) {
+					schema.i16 "val"(17),
 				},
-				schema.variant "u32"(20) {
-					schema.u32 "val"(21),
+				schema.variant "u32"(18) {
+					schema.u32 "val"(19),
 				},
-				schema.variant "i32"(22) {
-					schema.i32 "val"(23),
+				schema.variant "i32"(20) {
+					schema.i32 "val"(21),
 				},
-				schema.variant "u64"(24) {
-					schema.u64 "val"(25),
+				schema.variant "u64"(22) {
+					schema.u64 "val"(23),
 				},
-				schema.variant "i64"(26) {
-					schema.i64 "val"(27),
+				schema.variant "i64"(24) {
+					schema.i64 "val"(25),
 				},
-				schema.variant "f16"(28) {
-					schema.f16 "val"(29),
+				schema.variant "f16"(26) {
+					schema.f16 "val"(27),
 				},
-				schema.variant "f32"(30) {
-					schema.f32 "val"(31),
+				schema.variant "f32"(28) {
+					schema.f32 "val"(29),
 				},
-				schema.variant "f64"(32) {
-					schema.f64 "val"(33),
+				schema.variant "f64"(30) {
+					schema.f64 "val"(31),
 				},
-				schema.variant "bytes"(34) {
-					schema.list(schema.u8) "val"(35),
+				schema.variant "bytes"(32) {
+					schema.list(schema.u8) "val"(33),
 				},
-				schema.variant "unit"(36) {},
+				schema.variant "unit"(34) {},
 			},
 		},
 	},
