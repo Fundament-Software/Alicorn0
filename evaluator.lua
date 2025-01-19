@@ -48,7 +48,7 @@ local evaluate, infer, check, apply_value
 local name_array = string_array
 local typed = terms.typed_term
 
-local nil_anchor = format.create_anchor(0, 0, "<NIL>")
+local nil_anchor = format.nil_anchor
 
 ---@param luafunc function
 ---@return value
