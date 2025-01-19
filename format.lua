@@ -54,6 +54,22 @@ local anchor_mt = {
 	__index = Anchor,
 }
 
+---@param line integer
+---@param char integer
+---@param sourceid string
+---@return Anchor
+local function create_anchor(line, char, sourceid)
+	local new_anchor = {
+		line = line,
+		char = char,
+		sourceid = sourceid,
+	}
+	setmetatable(new_anchor, anchor_mt)
+	return new_anchor
+end
+
+local NIL_ANCHOR = create_anchor(0, 0, "<NIL>")
+
 lpeg.locale(lpeg)
 
 local function element(kind, pattern)
@@ -190,20 +206,6 @@ end
 
 local function erase(pattern)
 	return pattern / {}
-end
-
----@param line integer
----@param char integer
----@param sourceid string
----@return Anchor
-local function create_anchor(line, char, sourceid)
-	local new_anchor = {
-		line = line,
-		char = char,
-		sourceid = sourceid,
-	}
-	setmetatable(new_anchor, anchor_mt)
-	return new_anchor
 end
 
 ---@class LinePosition
@@ -680,4 +682,4 @@ local function parse(input, filename)
 	return ast
 end
 
-return { parse = parse, anchor_mt = anchor_mt, create_anchor = create_anchor }
+return { parse = parse, anchor_mt = anchor_mt, create_anchor = create_anchor, NIL_ANCHOR = NIL_ANCHOR }
