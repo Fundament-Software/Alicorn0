@@ -100,10 +100,12 @@ function neutral_value:as_host_if_stuck() end
 function neutral_value:is_host_intrinsic_stuck() end
 ---@return neutral_value source
 ---@return Anchor start_anchor
+---@return Anchor end_anchor
 function neutral_value:unwrap_host_intrinsic_stuck() end
 ---@return boolean
 ---@return neutral_value source
 ---@return Anchor start_anchor
+---@return Anchor end_anchor
 function neutral_value:as_host_intrinsic_stuck() end
 ---@return boolean
 function neutral_value:is_host_wrap_stuck() end
@@ -132,7 +134,7 @@ function neutral_value:as_host_unwrap_stuck() end
 ---@field host_application_stuck fun(function: any, arg: neutral_value): neutral_value
 ---@field host_tuple_stuck fun(leading: ArrayValue, stuck_element: neutral_value, trailing: ArrayValue): neutral_value
 ---@field host_if_stuck fun(subject: neutral_value, consequent: value, alternate: value): neutral_value
----@field host_intrinsic_stuck fun(source: neutral_value, start_anchor: Anchor): neutral_value
+---@field host_intrinsic_stuck fun(source: neutral_value, start_anchor: Anchor, end_anchor: Anchor): neutral_value
 ---@field host_wrap_stuck fun(content: neutral_value): neutral_value
 ---@field host_unwrap_stuck fun(container: neutral_value): neutral_value
 return {}

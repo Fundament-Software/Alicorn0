@@ -406,7 +406,7 @@ end
 
 function M.here(offset)
 	local info = debug.getinfo((offset or 1) + 1, "Sl")
-	return " @ " .. info.source .. ":" .. info.currentline
+	return info.source .. ":" .. info.currentline
 end
 
 function M.bound_here(offset)
