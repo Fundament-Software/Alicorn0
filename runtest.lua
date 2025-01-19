@@ -286,6 +286,8 @@ local function execute_alc_file(bound_expr, log)
 	local set = gen.declare_set
 	local unique_id = gen.builtin_table
 
+	local nil_anchor = format.nil_anchor
+
 	local ok, err = pcall(function()
 		evaluator.typechecker_state:flow(
 			type,
@@ -295,7 +297,7 @@ local function execute_alc_file(bound_expr, log)
 				evaluator.typechecker_state:metavariable(terms.typechecking_context()):as_value()
 			),
 			nil,
-			terms.constraintcause.primitive("final flow check", format.create_anchor(0, 0, "<NIL>"))
+			terms.constraintcause.primitive("final flow check", nil_anchor, nil_anchor)
 		)
 	end)
 
