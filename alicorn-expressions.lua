@@ -37,7 +37,7 @@ local infer = evaluator.infer
 --local typechecker_state = evaluator.typechecker_state
 
 local format = require "format"
-local NIL_ANCHOR = format.create_anchor(0, 0, "<NIL>")
+local nil_anchor = format.create_anchor(0, 0, "<NIL>")
 
 local U = require "alicorn-utils"
 
@@ -450,7 +450,7 @@ local function speculate_pi_type(env, metaval)
 			env.typechecking_context,
 			pi,
 			env.typechecking_context,
-			terms.constraintcause.primitive("Speculating on pi type", NIL_ANCHOR)
+			terms.constraintcause.primitive("Speculating on pi type", nil_anchor)
 		)
 
 		--[[U.tag(
@@ -465,7 +465,7 @@ local function speculate_pi_type(env, metaval)
 			env.typechecking_context,
 			pi,
 			env.typechecking_context,
-			terms.constraintcause.primitive("Speculating on pi type", NIL_ANCHOR)
+			terms.constraintcause.primitive("Speculating on pi type", nil_anchor)
 		)]]
 
 		return pi
@@ -484,7 +484,7 @@ local function speculate_pi_type(env, metaval)
 			env.typechecking_context,
 			pi,
 			env.typechecking_context,
-			terms.constraintcause.primitive("Speculating on pi type", NIL_ANCHOR)
+			terms.constraintcause.primitive("Speculating on pi type", nil_anchor)
 		)
 
 		--[[U.tag(
@@ -499,7 +499,7 @@ local function speculate_pi_type(env, metaval)
 			env.typechecking_context,
 			pi,
 			env.typechecking_context,
-			terms.constraintcause.primitive("Speculating on pi type", NIL_ANCHOR)
+			terms.constraintcause.primitive("Speculating on pi type", nil_anchor)
 		)]]
 
 		return pi
@@ -699,7 +699,7 @@ local function call_host_func_type(type_of_term, usage_count, term, sargs, goal,
 			env.typechecking_context,
 			host_func_type,
 			env.typechecking_context,
-			terms.constraintcause.primitive("Speculating on host func type", NIL_ANCHOR)
+			terms.constraintcause.primitive("Speculating on host func type", nil_anchor)
 		)
 
 		return host_func_type
@@ -1258,7 +1258,7 @@ collect_tuple = metalanguage.reducer(
 				env.typechecking_context,
 				goal_type,
 				env.typechecking_context,
-				terms.constraintcause.primitive("tuple type in collect_tuple", NIL_ANCHOR)
+				terms.constraintcause.primitive("tuple type in collect_tuple", nil_anchor)
 			)
 
 			--[[U.tag(
@@ -1273,7 +1273,7 @@ collect_tuple = metalanguage.reducer(
 				env.typechecking_context,
 				goal_type,
 				env.typechecking_context,
-				terms.constraintcause.primitive("tuple type in collect_tuple", NIL_ANCHOR)
+				terms.constraintcause.primitive("tuple type in collect_tuple", nil_anchor)
 			)]]
 			return true, checkable_term.tuple_cons(collected_terms), env
 		else
@@ -1355,7 +1355,7 @@ collect_host_tuple = metalanguage.reducer(
 				env.typechecking_context,
 				goal_type,
 				env.typechecking_context,
-				terms.constraintcause.primitive("host tuple type in collect_host_tuple", NIL_ANCHOR)
+				terms.constraintcause.primitive("host tuple type in collect_host_tuple", nil_anchor)
 			)
 			return true, checkable_term.host_tuple_cons(collected_terms), env
 		else
