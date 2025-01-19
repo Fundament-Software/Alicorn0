@@ -29,7 +29,7 @@ local inferrable_term = gen.declare_type()
 local typed_term = gen.declare_type()
 ---@module "types.free"
 local free = gen.declare_type()
----@module "types.placeholder"
+---@module "types.placeholder_debug"
 local placeholder_debug = gen.declare_type()
 ---@module "types.value"
 local value = gen.declare_type()
@@ -378,8 +378,9 @@ end
 ---@param type value
 ---@param val value?
 ---@param start_anchor Anchor?
+---@param end_anchor Anchor?
 ---@return TypecheckingContext
-function TypecheckingContext:append(name, type, val, start_anchor)
+function TypecheckingContext:append(name, type, val, start_anchor, end_anchor)
 	if gen.builtin_string.value_check(name) ~= true then
 		error("TypecheckingContext:append parameter 'name' must be a string")
 	end
@@ -396,17 +397,22 @@ function TypecheckingContext:append(name, type, val, start_anchor)
 		error "BUG!!!"
 	end
 	if val ~= nil and value.value_check(val) ~= true then
-		error("TypecheckingContext:append parameter 'val' must be a value (or nil if given start_anchor)")
+		error("TypecheckingContext:append parameter 'val' must be a value (or nil if given start_anchor and end_anchor)")
 	end
-	if start_anchor ~= nil and anchor_type.value_check(start_anchor) ~= true then
-		error("TypecheckingContext:append parameter 'start_anchor' must be an start_anchor (or nil if given val)")
+	if start_anchor ~= nil or end_anchor ~= nil then
+		if start_anchor == nil or anchor_type.value_check(start_anchor) ~= true then
+			error("TypecheckingContext:append parameter 'start_anchor' must be an anchor (or nil if given val and not end_anchor)")
+		end
+		if end_anchor == nil or anchor_type.value_check(end_anchor) ~= true then
+			error("TypecheckingContext:append parameter 'end_anchor' must be an anchor (or nil if given val and not start_anchor)")
+		end
 	end
 	if (val and start_anchor) or (not val and not start_anchor) then
-		error("TypecheckingContext:append expected either val or start_anchor")
+		error("TypecheckingContext:append expected either val or start_anchor & end_anchor")
 	end
 	local info
 	if not val then
-		info = placeholder_debug(name, start_anchor)
+		info = placeholder_debug(name, start_anchor, end_anchor)
 		info["{TRACE}"] = U.bound_here(2)
 		val = value.neutral(neutral_value.free(free.placeholder(self:len() + 1, info)))
 	end
@@ -502,12 +508,14 @@ binding:define_enum("binding", {
 		"param_name",       gen.builtin_string,
 		"param_annotation", inferrable_term,
 		"start_anchor",     anchor_type,
+		"end_anchor",       anchor_type,
 		"visible",          visibility,
 		"pure",             checkable_term,
 	} },
 	{ "program_sequence", {
 		"first",        inferrable_term,
 		"start_anchor", anchor_type,
+		"end_anchor",   anchor_type,
 	} },
 })
 
@@ -536,6 +544,7 @@ inferrable_term:define_enum("inferrable", {
 		"param_annotation", inferrable_term,
 		"body",             inferrable_term,
 		"start_anchor",     anchor_type,
+		"end_anchor",       anchor_type,
 		"visible",          visibility,
 		"pure",             checkable_term,
 	} },
@@ -644,10 +653,12 @@ inferrable_term:define_enum("inferrable", {
 		"source",       checkable_term,
 		"type",         inferrable_term, --checkable_term,
 		"start_anchor", anchor_type,
+		"end_anchor",   anchor_type,
 	} },
 	{ "program_sequence", {
 		"first",        inferrable_term,
 		"start_anchor", anchor_type,
+		"end_anchor",   anchor_type,
 		"continue",     inferrable_term,
 	} },
 	{ "program_end", { "result", inferrable_term } },
@@ -677,28 +688,32 @@ local constraintcause = gen.declare_type()
 -- stylua: ignore
 constraintcause:define_enum("constraintcause", {
 	{ "primitive", {
-		"description", gen.builtin_string,
-		"position",    anchor_type,
-		"track", gen.any_lua_type,
+		"description",  gen.builtin_string,
+		"start_anchor", anchor_type,
+		"end_anchor",   anchor_type,
+		"track",        gen.any_lua_type,
 	} },
 	{ "composition", {
-		"left",     gen.builtin_number,
-		"right",    gen.builtin_number,
-		"position", anchor_type,
+		"left",         gen.builtin_number,
+		"right",        gen.builtin_number,
+		"start_anchor", anchor_type,
+		"end_anchor",   anchor_type,
 	} },
 	{ "nested", {
 		"description", gen.builtin_string,
-		"inner",     constraintcause,
+		"inner",       constraintcause,
 	} },
 	{ "leftcall_discharge", {
-		"call",       gen.builtin_number,
-		"constraint", gen.builtin_number,
-		"position",   anchor_type,
+		"call",         gen.builtin_number,
+		"constraint",   gen.builtin_number,
+		"start_anchor", anchor_type,
+		"end_anchor",   anchor_type,
 	} },
 	{ "rightcall_discharge", {
-		"constraint", gen.builtin_number,
-		"call",       gen.builtin_number,
-		"position",   anchor_type,
+		"constraint",   gen.builtin_number,
+		"call",         gen.builtin_number,
+		"start_anchor", anchor_type,
+		"end_anchor",   anchor_type,
 	} },
 	{ "lost", { --Information has been lost, please generate any information you can to help someone debug the lost information in the future
 		"unique_string", gen.builtin_string,
@@ -883,6 +898,7 @@ typed_term:define_enum("typed", {
 	{ "host_intrinsic", {
 		"source",       typed_term,
 		"start_anchor", anchor_type,
+		"end_anchor",   anchor_type,
 	} },
 
 	-- a list of upper and lower bounds, and a relation being bound with respect to
@@ -946,6 +962,7 @@ typed_term:define_enum("typed", {
 placeholder_debug:define_record("placeholder_debug", {
 	"name",         gen.builtin_string,
 	"start_anchor", anchor_type,
+	"end_anchor",   anchor_type,
 })
 
 -- stylua: ignore
@@ -1232,6 +1249,7 @@ neutral_value:define_enum("neutral_value", {
 	{ "host_intrinsic_stuck", {
 		"source",       neutral_value,
 		"start_anchor", anchor_type,
+		"end_anchor",   anchor_type,
 	} },
 	{ "host_wrap_stuck", { "content", neutral_value } },
 	{ "host_unwrap_stuck", { "container", neutral_value } },
@@ -1309,6 +1327,7 @@ local terms = {
 	inferrable_term = inferrable_term, -- {}
 	typed_term = typed_term, -- {}
 	free = free,
+	placeholder_debug = placeholder_debug,
 	visibility = visibility,
 	purity = purity,
 	block_purity = block_purity,
@@ -1369,11 +1388,11 @@ inferrable_term:derive(derivers.pretty_print, inferrable_term_override_pretty)
 typed_term:derive(derivers.pretty_print, typed_term_override_pretty)
 visibility:derive(derivers.pretty_print)
 free:derive(derivers.pretty_print)
+placeholder_debug:derive(derivers.pretty_print)
 value:derive(derivers.pretty_print, value_override_pretty)
 neutral_value:derive(derivers.pretty_print, neutral_value_override_pretty)
 binding:derive(derivers.pretty_print, binding_override_pretty)
 expression_goal:derive(derivers.pretty_print)
-placeholder_debug:derive(derivers.pretty_print)
 purity:derive(derivers.pretty_print)
 result_info:derive(derivers.pretty_print)
 constraintcause:derive(derivers.pretty_print)

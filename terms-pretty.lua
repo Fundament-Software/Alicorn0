@@ -661,7 +661,7 @@ end
 ---@param pp PrettyPrint
 ---@param context AnyContext
 function binding_override_pretty:annotated_lambda(pp, context)
-	local param_name, param_annotation, anchor, visible, pure = self:unwrap_annotated_lambda()
+	local param_name, param_annotation, start_anchor, end_anchor, visible, pure = self:unwrap_annotated_lambda()
 	context = ensure_context(context)
 
 	pp:_enter()
@@ -688,7 +688,7 @@ end
 ---@param pp PrettyPrint
 ---@param context AnyContext
 function inferrable_term_override_pretty:annotated_lambda(pp, context)
-	local param_name, param_annotation, body, anchor, visible, pure = self:unwrap_annotated_lambda()
+	local param_name, param_annotation, body, start_anchor, end_anchor, visible, pure = self:unwrap_annotated_lambda()
 	context = ensure_context(context)
 	local inner_context = context:append(param_name)
 	local is_tuple_type, desc = as_any_tuple_type(param_annotation)
@@ -1978,7 +1978,7 @@ end
 ---@param pp PrettyPrint
 ---@param context AnyContext
 function typed_term_override_pretty:host_intrinsic(pp, context)
-	local source, _ = self:unwrap_host_intrinsic()
+	local source, start_anchor, end_anchor = self:unwrap_host_intrinsic()
 
 	pp:_enter()
 

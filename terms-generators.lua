@@ -314,12 +314,14 @@ end
 ---@class MapType: Type
 ---@field key_type Type
 ---@field value_type Type
----@field __index table
+---@overload fun(self: MapType, ...): MapValue
+---@field __index MapValue
 ---@field __newindex function
----@field __pairs function(MapValue): function, MapValue, Value?
----@field __tostring function(MapValue): string
+---@field __pairs function(MapType | MapValue): function, MapValue, Value?
+---@field __tostring function(MapType | MapValue): string
 
 ---@class MapValue: Value
+---@field __index MapType
 ---@field _map { [Value]: Value }
 ---@field set fun(MapValue, Value, Value)
 ---@field reset fun(MapValue, Value)
@@ -350,6 +352,7 @@ local map_type_mt = {
 	end,
 }
 
+---@return MapValue
 local function gen_map_methods(self, key_type, value_type)
 	return {
 		set = function(val, key, value)
@@ -467,6 +470,7 @@ define_map = U.memoize(define_map)
 
 ---@class SetType: Type
 ---@field key_type Type
+---@overload fun(self: SetType, ...): SetValue
 ---@field __index table
 ---@field __pairs function(SetValue): function, SetValue, Value?
 ---@field __tostring function(SetValue): string
@@ -622,6 +626,7 @@ define_set = U.memoize(define_set)
 ---@class ArrayType: Type
 ---@field value_type Type
 ---@field methods { [string]: function }
+---@overload fun(self: ArrayType, ...): ArrayValue
 ---@field __eq fun(ArrayValue, ArrayValue): boolean
 ---@field __index fun(self: ArrayValue, key: integer | string) : Value | function
 ---@field __newindex fun(self: ArrayValue, key: integer, value: Value)
@@ -632,6 +637,7 @@ define_set = U.memoize(define_set)
 ---@class ArrayValue: Value
 ---@field n integer
 ---@field array Value[]
+---@field [integer] Value
 ---@field ipairs fun(ArrayValue): function, ArrayValue, integer
 ---@field len fun(ArrayValue): integer
 ---@field append fun(ArrayValue, Value)
