@@ -37,7 +37,7 @@ local infer = evaluator.infer
 --local typechecker_state = evaluator.typechecker_state
 
 local format = require "format"
-local NIL_ANCHOR = format.create_anchor(0, 0, "<NIL>")
+local NIL_ANCHOR = format.NIL_ANCHOR
 
 local U = require "alicorn-utils"
 
