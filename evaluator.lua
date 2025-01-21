@@ -6,7 +6,8 @@ local pretty_printer = require "pretty-printer"
 local s = pretty_printer.s
 --local new_typechecking_context = terms.typechecking_context
 --local checkable_term = terms.checkable_term
---local inferrable_term = terms.inferrable_term
+local unanchored_inferrable_term = terms.unanchored_inferrable_term
+local anchored_inferrable_term = terms.anchored_inferrable_term
 local typed_term = terms.typed_term
 local free = terms.free
 local visibility = terms.visibility
@@ -2070,20 +2071,22 @@ function infer_tuple_type_unwrapped2(subject_type_a, lctx, subject_type_b, rctx,
 	return make_inner_context2(desc_a, make_prefix_a, lctx, desc_b, make_prefix_b, rctx)
 end
 
----@param inferrable_term inferrable
+---@param anchor_inferrable_term anchored_inferrable
 ---@param typechecking_context TypecheckingContext
 ---@return value, ArrayValue, typed
 function infer_impl(
-	inferrable_term, -- constructed from inferrable
+	anchor_inferrable_term, -- constructed from inferrable
 	typechecking_context -- todo
 )
 	-- -> type of term, usage counts, a typed term,
-	if terms.inferrable_term.value_check(inferrable_term) ~= true then
+	if anchored_inferrable_term.value_check(anchor_inferrable_term) ~= true then
 		error("infer, inferrable_term: expected an inferrable term")
 	end
 	if terms.typechecking_context_type.value_check(typechecking_context) ~= true then
 		error("infer, typechecking_context: expected a typechecking context")
 	end
+
+	local anchor, inferrable_term = anchor_inferrable_term:unwrap_anchored_inferrable()
 
 	if inferrable_term:is_bound_variable() then
 		local index, debug = inferrable_term:unwrap_bound_variable()
@@ -3092,14 +3095,17 @@ function infer_impl(
 	error("unreachable!?")
 end
 
----@param inferrable_term inferrable
+---@param inferrable_term anchored_inferrable
 ---@param typechecking_context TypecheckingContext
 ---@return boolean, value, ArrayValue, typed
+
 infer = function(inferrable_term, typechecking_context)
+	local _, unanchored_print = inferrable_term:unwrap_anchored_inferrable()
+
 	local tracked = inferrable_term.track ~= nil
 	if tracked then
 		print(
-			"\n" .. string.rep("·", recurse_count) .. "INFER: " .. inferrable_term:pretty_print(typechecking_context)
+			"\n" .. string.rep("·", recurse_count) .. "INFER: " .. unanchored_print:pretty_print(typechecking_context)
 		)
 		--print(typechecking_context:format_names())
 	end

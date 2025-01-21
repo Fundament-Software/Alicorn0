@@ -206,6 +206,13 @@ local function create_anchor(line, char, sourceid)
 	return new_anchor
 end
 
+---@param debuglevel integer?
+---@return Anchor
+local function anchor_here(debuglevel)
+	local info = debug.getinfo((debuglevel or 1) + 1, "Sl")
+	return create_anchor(info.currentline, 0, "SYNTH:" .. info.source)
+end
+
 ---@class LinePosition
 ---@field line integer
 ---@field pos integer
@@ -680,4 +687,4 @@ local function parse(input, filename)
 	return ast
 end
 
-return { parse = parse, anchor_mt = anchor_mt, create_anchor = create_anchor }
+return { parse = parse, anchor_mt = anchor_mt, create_anchor = create_anchor, anchor_here = anchor_here }

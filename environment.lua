@@ -3,7 +3,8 @@ local fibbuf = require "fibonacci-buffer"
 local U = require "alicorn-utils"
 
 local terms = require "terms"
-local inferrable_term = terms.inferrable_term
+local unanchored_inferrable_term = terms.unanchored_inferrable_term
+local anchored_inferrable_term = terms.anchored_inferrable_term
 local typechecking_context = terms.typechecking_context
 local module_mt = {}
 
@@ -57,7 +58,7 @@ local environment = {}
 
 ---@param name string
 ---@return boolean
----@return inferrable|string
+---@return anchored_inferrable|string
 function environment:get(name)
 	local present, binding = self.in_scope:get(name)
 	if not present then
@@ -93,8 +94,10 @@ function environment:bind_local(binding)
 		error("nyi environment dependent purity")
 	end
 	if binding:is_let() then
-		local name, expr = binding:unwrap_let()
-		local ok, expr_type, expr_usages, expr_term = infer(expr, self.typechecking_context)
+		local name, anchored_expr = binding:unwrap_let()
+		local anchor, expr = anchored_expr:unwrap_anchored_inferrable()
+		local ok, expr_type, expr_usages, expr_term = infer(anchored_expr, self.typechecking_context)
+
 		if not ok then
 			return false, expr_type
 		end
@@ -103,7 +106,8 @@ function environment:bind_local(binding)
 			error("infer returned a bad type for expr in bind_local")
 		end
 		local n = self.typechecking_context:len()
-		local term = inferrable_term.bound_variable(n + 1, U.bound_here())
+		---@type anchored_inferrable
+		local term = anchored_inferrable_term(anchor, unanchored_inferrable_term.bound_variable(n + 1, U.bound_here()))
 		local locals = self.locals:put(name, term)
 		local evaled = evaluator.evaluate(expr_term, self.typechecking_context.runtime_context)
 		-- print "doing let binding"
@@ -119,6 +123,7 @@ function environment:bind_local(binding)
 			})
 	elseif binding:is_tuple_elim() then
 		local names, subject = binding:unwrap_tuple_elim()
+		local anchor, _ = subject:unwrap_anchored_inferrable()
 		local ok, subject_type, subject_usages, subject_term = infer(subject, self.typechecking_context)
 		if not ok then
 			return false, subject_type
@@ -189,7 +194,8 @@ function environment:bind_local(binding)
 				-- if constructor ~= "cons" then
 				-- 	error("todo: this error message")
 				-- end
-				local term = inferrable_term.bound_variable(n + i, U.bound_here())
+				local term =
+					anchored_inferrable_term(anchor, unanchored_inferrable_term.bound_variable(n + i, U.bound_here()))
 				locals = locals:put(v, term)
 
 				local evaled = evaluator.index_tuple_value(subject_value, i)
@@ -237,7 +243,10 @@ function environment:bind_local(binding)
 		local bindings = self.bindings:append(binding)
 		local locals = self.locals:put(
 			param_name,
-			inferrable_term.bound_variable(self.typechecking_context:len() + 1, U.bound_here())
+			anchored_inferrable_term(
+				start_anchor,
+				unanchored_inferrable_term.bound_variable(self.typechecking_context:len() + 1, U.bound_here())
+			)
 		)
 		local typechecking_context = self.typechecking_context:append(param_name, evaled, nil, start_anchor)
 		return true,
@@ -272,7 +281,8 @@ function environment:bind_local(binding)
 
 		--print("FOUND EFFECTFUL BINDING", first_result_type, "produced by ", first_type)
 		local n = self.typechecking_context:len()
-		local term = inferrable_term.bound_variable(n + 1, U.bound_here())
+		local term =
+			anchored_inferrable_term(start_anchor, unanchored_inferrable_term.bound_variable(n + 1, U.bound_here()))
 		local locals = self.locals:put("#program-sequence", term)
 		local typechecking_context =
 			self.typechecking_context:append("#program-sequence", first_result_type, nil, start_anchor)
@@ -350,10 +360,10 @@ function environment:enter_block(purity)
 end
 
 ---exit a block, resolving the bindings in that block and restoring the shadowed locals
----@param term inferrable
+---@param term anchored_inferrable
 ---@param shadowed ShadowEnvironment
 ---@return Environment
----@return inferrable
+---@return anchored_inferrable
 ---@return purity
 function environment:exit_block(term, shadowed)
 	-- -> env, term
@@ -381,9 +391,12 @@ function environment:exit_block(term, shadowed)
 	--outer.typechecking_context:dump_names()
 	--print "new"
 	--env.typechecking_context:dump_names()
+
+	---@type anchored_inferrable
 	local wrapped = term
+	local anchor, _ = term:unwrap_anchored_inferrable()
 	if purity:is_effectful() then
-		wrapped = terms.inferrable_term.program_end(wrapped)
+		wrapped = anchored_inferrable_term(anchor, unanchored_inferrable_term.program_end(wrapped))
 	end
 	for idx = self.bindings:len(), 1, -1 do
 		---@type binding
@@ -391,21 +404,26 @@ function environment:exit_block(term, shadowed)
 		if not binding then
 			error "missing binding"
 		end
+		---@type unanchored_inferrable
+		local unanchored_wrapped
 		if binding:is_let() then
 			local name, expr = binding:unwrap_let()
-			wrapped = terms.inferrable_term.let(name, expr, wrapped)
+			unanchored_wrapped = unanchored_inferrable_term.let(name, expr, wrapped)
 		elseif binding:is_tuple_elim() then
 			local names, subject = binding:unwrap_tuple_elim()
-			wrapped = terms.inferrable_term.tuple_elim(names, subject, wrapped)
+			unanchored_wrapped = unanchored_inferrable_term.tuple_elim(names, subject, wrapped)
 		elseif binding:is_annotated_lambda() then
 			local name, annotation, start_anchor, visible, purity = binding:unwrap_annotated_lambda()
-			wrapped = terms.inferrable_term.annotated_lambda(name, annotation, wrapped, start_anchor, visible, purity)
+			unanchored_wrapped =
+				unanchored_inferrable_term.annotated_lambda(name, annotation, wrapped, start_anchor, visible, purity)
 		elseif binding:is_program_sequence() then
 			local first, start_anchor = binding:unwrap_program_sequence()
-			wrapped = terms.inferrable_term.program_sequence(first, start_anchor, wrapped)
+			unanchored_wrapped = unanchored_inferrable_term.program_sequence(first, start_anchor, wrapped)
 		else
 			error("exit_block: unknown kind: " .. binding.kind)
 		end
+
+		wrapped = anchored_inferrable_term(anchor, unanchored_wrapped)
 	end
 	evaluator.typechecker_state:exit_block()
 

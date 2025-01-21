@@ -1,3 +1,5 @@
+local format = require "format"
+
 --[[
 Matcher(userdata : type, results : tuple-desc) : type
 Syntax : type
@@ -545,7 +547,7 @@ local nil_accepters = {
 local function new_nilval(start_anchor, end_anchor)
 	return cons_syntax(nil_accepters, start_anchor, end_anchor)
 end
-local nilval = new_nilval()
+local nilval = new_nilval(format.anchor_here(), format.anchor_here())
 
 ---@param start_anchor Anchor
 ---@param end_anchor Anchor
@@ -668,7 +670,7 @@ end
 local list_many_fold_until = reducer(
 	---@generic T
 	---@param syntax ConstructedSyntax
-	---@param submatcher_fn fun(T): Matcher
+	---@param submatcher_fn fun(T, Anchor): Matcher
 	---@param init_thread T
 	---@param termination Matcher
 	---@return boolean
@@ -681,10 +683,17 @@ local list_many_fold_until = reducer(
 		local nextthread = init_thread
 		while ok and cont do
 			thread = nextthread
-			ok, cont, val, nextthread, tail = tail:match({
-				ispair(list_many_fold_pair_handler),
-				isnil(list_many_nil_handler),
-			}, failure_handler, { submatcher_fn(thread), termination })
+			ok, cont, val, nextthread, tail = tail:match(
+				{
+					ispair(list_many_fold_pair_handler),
+					isnil(list_many_nil_handler),
+				},
+				failure_handler,
+				{
+					submatcher_fn(thread, tail.start_anchor),
+					termination,
+				}
+			)
 			vals[#vals + 1] = val
 		end
 		if not ok then
@@ -698,7 +707,7 @@ local list_many_fold_until = reducer(
 local list_many_fold = reducer(
 	---@generic T
 	---@param syntax ConstructedSyntax
-	---@param submatcher_fn fun(T): Matcher
+	---@param submatcher_fn fun(T, Anchor): Matcher
 	---@param init_thread T
 	---@return boolean
 	---@return any[]|string
