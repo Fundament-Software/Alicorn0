@@ -1686,7 +1686,7 @@ function check(
 				typechecking_context,
 				goal_type,
 				typechecking_context,
-				terms.constraintcause.primitive("inferrable", U.anchor_here())
+				terms.constraintcause.primitive("inferrable", U.anchor_here(), U.anchor_here())
 			)
 			if not ok then
 				return false, err
@@ -1729,7 +1729,7 @@ function check(
 			typechecking_context,
 			goal_type,
 			typechecking_context,
-			terms.constraintcause.primitive("checkable_term:is_tuple_cons", U.anchor_here())
+			terms.constraintcause.primitive("checkable_term:is_tuple_cons", U.anchor_here(), U.anchor_here())
 		)
 		if not ok then
 			return false, err
@@ -1771,7 +1771,7 @@ function check(
 			typechecking_context,
 			goal_type,
 			typechecking_context,
-			terms.constraintcause.primitive("checkable_term:is_host_tuple_cons", U.anchor_here())
+			terms.constraintcause.primitive("checkable_term:is_host_tuple_cons", U.anchor_here(), U.anchor_here())
 		)
 		if not ok then
 			return false, err
@@ -2111,7 +2111,7 @@ function infer_impl(
 	elseif inferrable_term:is_typed() then
 		return true, inferrable_term:unwrap_typed()
 	elseif inferrable_term:is_annotated_lambda() then
-		local param_name, param_annotation, body, start_anchor, param_visibility, purity =
+		local param_name, param_annotation, body, start_anchor, end_anchor, param_visibility, purity =
 			inferrable_term:unwrap_annotated_lambda()
 		local ok, param_type_of_term, _, param_term = infer(param_annotation, typechecking_context)
 		if not ok then
@@ -2188,7 +2188,7 @@ function infer_impl(
 			typechecking_context,
 			result_type_param_type,
 			typechecking_context,
-			terms.constraintcause.primitive("inferrable pi term", U.anchor_here())
+			terms.constraintcause.primitive("inferrable pi term", U.anchor_here(), U.anchor_here())
 		)
 		if not ok then
 			return false, err
@@ -2389,7 +2389,7 @@ function infer_impl(
 				typechecking_context,
 				spec_type,
 				typechecking_context,
-				terms.constraintcause.primitive("tuple elimination", U.anchor_here())
+				terms.constraintcause.primitive("tuple elimination", U.anchor_here(), U.anchor_here())
 			)
 			if not ok then
 				return false, err
@@ -2404,7 +2404,7 @@ function infer_impl(
 					typechecking_context,
 					host_spec_type,
 					typechecking_context,
-					terms.constraintcause.primitive("host tuple elimination", U.anchor_here())
+					terms.constraintcause.primitive("host tuple elimination", U.anchor_here(), U.anchor_here())
 				)
 				if not ok then
 					return false, err
@@ -2453,7 +2453,7 @@ function infer_impl(
 			typechecking_context,
 			value.tuple_desc_type(univ_var),
 			typechecking_context,
-			terms.constraintcause.primitive("tuple type construction", U.anchor_here())
+			terms.constraintcause.primitive("tuple type construction", U.anchor_here(), U.anchor_here())
 		)
 		if not ok then
 			return false, err
@@ -2528,6 +2528,8 @@ function infer_impl(
 		end
 
 		-- evaluate the type of the record
+		---@param desc value
+		---@return ArrayType, MapType
 		local function make_type(desc)
 			local constructor, arg = desc:unwrap_enum_value()
 			if constructor == terms.DescCons.empty then
@@ -2609,17 +2611,20 @@ function infer_impl(
 			typechecking_context,
 			value.enum_type(value.enum_desc_value(constrain_variants)),
 			typechecking_context,
-			terms.constraintcause.primitive("enum case matching", U.anchor_here())
+			terms.constraintcause.primitive("enum case matching", U.anchor_here(), U.anchor_here())
 		)
 		if not ok then
 			return false, err
 		end
 		local term_variants = string_typed_map()
+		---@type {[integer]: value}
 		local result_types = {}
 		for k, v in variants:pairs() do
+			local constrain_variant = constrain_variants:get(k)
+			assert(constrain_variant, "infer_impl: unreachable")
 			--TODO figure out where to store/retrieve the anchors correctly
 			local ok, variant_type, variant_usages, variant_term =
-				infer(v, typechecking_context:append("#variant", constrain_variants:get(k), nil, v.start_anchor)) --TODO improve
+				infer(v, typechecking_context:append("#variant", constrain_variants:get(k), nil, v.start_anchor, v.end_anchor)) --TODO improve
 			if not ok then
 				return false, variant_type
 			end
@@ -2643,6 +2648,7 @@ function infer_impl(
 			)
 	elseif inferrable_term:is_enum_desc_cons() then
 		local variants, rest = inferrable_term:unwrap_enum_desc_cons()
+		---@type {[integer]: value}
 		local result_types = {}
 		local term_variants = string_typed_map()
 		for k, v in variants:pairs() do
@@ -2674,7 +2680,7 @@ function infer_impl(
 			typechecking_context,
 			value.enum_desc_type(univ_var),
 			typechecking_context,
-			terms.constraintcause.primitive("enum type construction", U.anchor_here())
+			terms.constraintcause.primitive("enum type construction", U.anchor_here(), U.anchor_here())
 		)
 		if not ok then
 			return false, err
@@ -2724,7 +2730,7 @@ function infer_impl(
 				typechecking_context,
 				op_userdata_type,
 				typechecking_context,
-				terms.constraintcause.primitive("operative userdata", U.anchor_here())
+				terms.constraintcause.primitive("operative userdata", U.anchor_here(), U.anchor_here())
 			)
 			if not ok then
 				return false, err
@@ -2858,7 +2864,7 @@ function infer_impl(
 			typechecking_context,
 			restype,
 			typechecking_context,
-			terms.constraintcause.primitive("inferred host if consequent", U.anchor_here())
+			terms.constraintcause.primitive("inferred host if consequent", U.anchor_here(), U.anchor_here())
 		)
 		if not ok then
 			return false, err
@@ -2868,7 +2874,7 @@ function infer_impl(
 			typechecking_context,
 			restype,
 			typechecking_context,
-			terms.constraintcause.primitive("inferred host if alternate", U.anchor_here())
+			terms.constraintcause.primitive("inferred host if alternate", U.anchor_here(), U.anchor_here())
 		)
 		if not ok then
 			return false, err
@@ -2903,7 +2909,7 @@ function infer_impl(
 		add_arrays(result_usages, bodyusages)
 		return true, bodytype, result_usages, terms.typed_term.let(name, exprterm, bodyterm)
 	elseif inferrable_term:is_host_intrinsic() then
-		local source, type, start_anchor = inferrable_term:unwrap_host_intrinsic()
+		local source, type, start_anchor, end_anchor = inferrable_term:unwrap_host_intrinsic()
 		local ok, source_usages, source_term = check(source, typechecking_context, value.host_string_type)
 		if not ok then
 			return false, source_usages
@@ -2920,7 +2926,7 @@ function infer_impl(
 		--error "weird type"
 		-- FIXME: type_type, source_type are ignored, need checked?
 		local type_val = evaluate(type_term, typechecking_context.runtime_context, typechecking_context)
-		return true, type_val, source_usages, typed_term.host_intrinsic(source_term, start_anchor)
+		return true, type_val, source_usages, typed_term.host_intrinsic(source_term, start_anchor, end_anchor)
 	elseif inferrable_term:is_level_max() then
 		local level_a, level_b = inferrable_term:unwrap_level_max()
 		local ok, arg_type_a, arg_usages_a, arg_term_a = infer(level_a, typechecking_context)
@@ -2974,14 +2980,14 @@ function infer_impl(
 			typechecking_context,
 			value.tuple_desc_type(value.host_type_type),
 			typechecking_context,
-			terms.constraintcause.primitive("host tuple type construction", U.anchor_here())
+			terms.constraintcause.primitive("host tuple type construction", U.anchor_here(), U.anchor_here())
 		)
 		if not ok then
 			return false, err
 		end
 		return true, terms.value.star(0, 0), desc_usages, terms.typed_term.host_tuple_type(desc_term)
 	elseif inferrable_term:is_program_sequence() then
-		local first, start_anchor, continue = inferrable_term:unwrap_program_sequence()
+		local first, start_anchor, end_anchor, continue = inferrable_term:unwrap_program_sequence()
 		local ok, first_type, first_usages, first_term = infer(first, typechecking_context)
 		if not ok then
 			return false, first_type
@@ -2995,13 +3001,13 @@ function infer_impl(
 			typechecking_context,
 			terms.value.program_type(first_effect_sig, first_base_type),
 			typechecking_context,
-			terms.constraintcause.primitive("Inferring on program type ", start_anchor)
+			terms.constraintcause.primitive("Inferring on program type ", start_anchor, end_anchor)
 		)
 		if not ok then
 			return false, err
 		end
 
-		local inner_context = typechecking_context:append("#program-sequence", first_base_type, nil, start_anchor)
+		local inner_context = typechecking_context:append("#program-sequence", first_base_type, nil, start_anchor, end_anchor)
 		local ok, continue_type, continue_usages, continue_term = infer(continue, inner_context)
 		if not ok then
 			return false, continue_type
@@ -3612,7 +3618,7 @@ function evaluate_impl(typed_term, runtime_context, ambient_typechecking_context
 		local expr_value = evaluate(expr, runtime_context, ambient_typechecking_context)
 		return evaluate(body, runtime_context:append(expr_value), ambient_typechecking_context)
 	elseif typed_term:is_host_intrinsic() then
-		local source, start_anchor = typed_term:unwrap_host_intrinsic()
+ 		local source, start_anchor, end_anchor = typed_term:unwrap_host_intrinsic()
 		local source_val = evaluate(source, runtime_context, ambient_typechecking_context)
 		if source_val:is_host_value() then
 			local source_str = source_val:unwrap_host_value()
@@ -3630,12 +3636,12 @@ function evaluate_impl(typed_term, runtime_context, ambient_typechecking_context
 			if has_luvit_require then
 				load_env.require = require_generator(start_anchor.sourceid)
 			end
-			local res = assert(load(source_str, "host_intrinsic<" .. tostring(start_anchor) .. ">", "t", load_env))()
+			local res = assert(load(source_str, "host_intrinsic<" .. tostring(start_anchor) .. ":" .. tostring(end_anchor) .. ">", "t", load_env))()
 			intrinsic_memo[source_str] = res
 			return value.host_value(res)
 		elseif source_val:is_neutral() then
 			local source_neutral = source_val:unwrap_neutral()
-			return value.neutral(neutral_value.host_intrinsic_stuck(source_neutral, start_anchor))
+			return value.neutral(neutral_value.host_intrinsic_stuck(source_neutral, start_anchor, end_anchor))
 		else
 			error "Tried to load an intrinsic with something that isn't a string"
 		end
@@ -4628,7 +4634,7 @@ function Reachability:constrain_transitivity(edge, edge_id, queue)
 				edge.rel,
 				edge.right,
 				math.min(edge.shallowest_block, l2.shallowest_block),
-				compositecause("composition", i, l2, edge_id, edge, U.anchor_here())
+				compositecause("composition", i, l2, edge_id, edge, U.anchor_here(), U.anchor_here())
 			)
 		)
 	end
@@ -4644,7 +4650,7 @@ function Reachability:constrain_transitivity(edge, edge_id, queue)
 				edge.rel,
 				r2.right,
 				math.min(edge.shallowest_block, r2.shallowest_block),
-				compositecause("composition", edge_id, edge, i, r2, U.anchor_here())
+				compositecause("composition", edge_id, edge, i, r2, U.anchor_here(), U.anchor_here())
 			)
 		)
 	end
@@ -5170,7 +5176,7 @@ function TypeCheckerState:constrain_leftcall_compose_1(edge, edge_id)
 					r2.rel,
 					r2.right,
 					math.min(edge.shallowest_block, r2.shallowest_block),
-					compositecause("leftcall_discharge", i, r2, edge_id, edge, U.anchor_here())
+					compositecause("leftcall_discharge", i, r2, edge_id, edge, U.anchor_here(), U.anchor_here())
 				)
 			)
 		end
@@ -5195,7 +5201,7 @@ function TypeCheckerState:constrain_on_left_meet(edge, edge_id)
 					edge.rel,
 					edge.right,
 					math.min(edge.shallowest_block, r.shallowest_block),
-					compositecause("composition", i, r, edge_id, edge, U.anchor_here())
+					compositecause("composition", i, r, edge_id, edge, U.anchor_here(), U.anchor_here())
 				)
 			)
 		end
@@ -5220,7 +5226,7 @@ function TypeCheckerState:constrain_on_right_meet(edge, edge_id)
 					edge.rel,
 					l.right,
 					math.min(edge.shallowest_block, l.shallowest_block),
-					compositecause("composition", edge_id, edge, i, l, U.anchor_here())
+					compositecause("composition", edge_id, edge, i, l, U.anchor_here(), U.anchor_here())
 				)
 			)
 		end
@@ -5250,7 +5256,7 @@ function TypeCheckerState:constrain_leftcall_compose_2(edge, edge_id)
 					edge.rel,
 					edge.right,
 					math.min(edge.shallowest_block, l2.shallowest_block),
-					compositecause("composition", i, l2, edge_id, edge, U.anchor_here())
+					compositecause("composition", i, l2, edge_id, edge, U.anchor_here(), U.anchor_here())
 				)
 			)
 		end
@@ -5278,7 +5284,7 @@ function TypeCheckerState:rightcall_constrain_compose_2(edge, edge_id)
 					l2.rel,
 					r,
 					math.min(edge.shallowest_block, l2.shallowest_block),
-					compositecause("rightcall_discharge", edge_id, edge, i, l2, U.anchor_here())
+					compositecause("rightcall_discharge", edge_id, edge, i, l2, U.anchor_here(), U.anchor_here())
 				)
 			)
 		end
@@ -5306,7 +5312,7 @@ function TypeCheckerState:rightcall_constrain_compose_1(edge, edge_id)
 					edge.rel,
 					r,
 					math.min(edge.shallowest_block, r2.shallowest_block),
-					compositecause("rightcall_discharge", i, r2, edge_id, edge, U.anchor_here())
+					compositecause("rightcall_discharge", i, r2, edge_id, edge, U.anchor_here(), U.anchor_here())
 				)
 			)
 		end
@@ -5636,13 +5642,13 @@ local function assemble_causal_chain(cause)
 
 	local g = typechecker_state.graph
 	if cause:is_composition() then
-		local left, right, pos = cause:unwrap_composition()
+		local left, right, start_anchor, end_anchor = cause:unwrap_composition()
 		return merge_causal_chain(g.constrain_edges:all()[left].cause, g.constrain_edges:all()[right].cause)
 	elseif cause:is_leftcall_discharge() then
-		local call, constraint, pos = cause:unwrap_leftcall_discharge()
+		local call, constraint, start_anchor, end_anchor = cause:unwrap_leftcall_discharge()
 		return merge_causal_chain(g.leftcall_edges:all()[call].cause, g.constrain_edges:all()[constraint].cause)
 	elseif cause:is_rightcall_discharge() then
-		local constraint, call, pos = cause:unwrap_rightcall_discharge()
+		local constraint, call, start_anchor, end_anchor = cause:unwrap_rightcall_discharge()
 		return merge_causal_chain(g.constrain_edges:all()[constraint].cause, g.rightcall_edges:all()[call].cause)
 	elseif cause:is_nested() then
 		local desc, inner = cause:unwrap_nested()
@@ -5650,10 +5656,10 @@ local function assemble_causal_chain(cause)
 		U.append(chain, desc)
 		return chain
 	elseif cause:is_primitive() then
-		local desc, pos = cause:unwrap_primitive()
+		local desc, start_anchor, end_anchor = cause:unwrap_primitive()
 		return { desc }
 	elseif cause:is_lost() then
-		local desc, stacktrace, pos = cause:unwrap_lost()
+		local desc, stacktrace, start_anchor, end_anchor = cause:unwrap_lost()
 		return { desc }
 	end
 end

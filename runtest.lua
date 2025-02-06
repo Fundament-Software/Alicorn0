@@ -296,7 +296,7 @@ local function execute_alc_file(bound_expr, log, env)
 				evaluator.typechecker_state:metavariable(env.typechecking_context):as_value()
 			),
 			env.typechecking_context,
-			terms.constraintcause.primitive("final flow check", U.anchor_here())
+			terms.constraintcause.primitive("final flow check", U.anchor_here(), U.anchor_here())
 		)
 
 		if not ok then
