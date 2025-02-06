@@ -398,14 +398,35 @@ local memo_nil_tag = {}
 
 ---cache a function's outputs to ensure purity with respect to identity
 ---@param fn function
+---@param args_table boolean Whether the function takes a single arguments table
 ---@return function
-function M.memoize(fn)
+function M.memoize(fn, args_table)
 	local memotab = setmetatable({}, memo_mt)
+	if args_table then
+		local function wrapfn(args)
+			local thismemo = memotab
+			for i, this_arg in ipairs(args) do
+				if this_arg == nil then
+					this_arg = memo_nil_tag
+				end
+				local nextmemo = thismemo[this_arg]
+				if not nextmemo then
+					nextmemo = setmetatable({}, memo_mt)
+					thismemo[this_arg] = nextmemo
+				end
+				thismemo = nextmemo
+			end
+			if not thismemo[memo_end_tag] then
+				thismemo[memo_end_tag] = fn(args)
+			end
+			return thismemo[memo_end_tag]
+		end
+		return wrapfn
+	end
 	local function wrapfn(...)
 		local args = table.pack(...)
 		local thismemo = memotab
-		for i = 1, args.n do
-			local this_arg = args[i]
+		for i, this_arg in ipairs(args) do
 			if this_arg == nil then
 				this_arg = memo_nil_tag
 			end

@@ -682,7 +682,7 @@ local function define_map(self, key_type, value_type)
 	})
 	return self
 end
-define_map = U.memoize(define_map)
+define_map = U.memoize(define_map, false)
 
 ---@class SetType: Type
 ---@overload fun(...): SetValue
@@ -836,7 +836,7 @@ local function define_set(self, key_type)
 	})
 	return self
 end
-define_set = U.memoize(define_set)
+define_set = U.memoize(define_set, false)
 
 ---@class ArrayType: Type
 ---@overload fun(...): ArrayValue
@@ -1121,7 +1121,7 @@ local function define_array(self, value_type)
 	})
 	return self
 end
-define_array = U.memoize(define_array)
+define_array = U.memoize(define_array, false)
 
 ---@class UndefinedType: Type
 ---@field define_record fun(self: table, kind: string, params_with_types: ParamsWithTypes): RecordType
