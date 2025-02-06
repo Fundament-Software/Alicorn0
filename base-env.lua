@@ -2088,6 +2088,14 @@ local function traverse(desc, len, elems)
 		return len, elems
 	elseif constructor == terms.DescCons.cons then
 		local elements = arg:unwrap_tuple_value()
+		if elements:len() ~= 2 then
+			error(
+				string.format(
+					"enum_value with constructor cons should have 2 args, but has %s",
+					tostring(elements:len())
+				)
+			)
+		end
 		local next_desc = elements[1]
 		len = len + 1
 		elems[len] = elements[2]
@@ -2209,6 +2217,14 @@ local function convert_desc(desc)
 		return desc
 	elseif constructor == terms.DescCons.cons then
 		local elements = arg:unwrap_tuple_value()
+		if elements:len() ~= 2 then
+			error(
+				string.format(
+					"enum_value with constructor cons should have 2 args, but has %s",
+					tostring(elements:len())
+				)
+			)
+		end
 		local next_desc, type_fun = elements[1], elements[2]
 		local convert_next = convert_desc(next_desc)
 		local convert_type = terms.flex_value
@@ -2258,6 +2274,14 @@ local function desc_length(desc, len)
 		return len
 	elseif constructor == terms.DescCons.cons then
 		local elements = arg:unwrap_tuple_value()
+		if elements:len() ~= 2 then
+			error(
+				string.format(
+					"enum_value with constructor cons should have 2 args, but has %s",
+					tostring(elements:len())
+				)
+			)
+		end
 		local next_desc = elements[1]
 		return desc_length(next_desc, len + 1)
 	else
