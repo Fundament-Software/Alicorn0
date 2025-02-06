@@ -337,17 +337,19 @@ local EffectRowRelation = setmetatable({
 		---@param cause constraintcause
 		---@return boolean, string?
 		function(l_ctx, val, r_ctx, use, cause)
-			if val:is_effect_row_extend() then
-				local val_components, val_rest = val:unwrap_effect_row_extend()
-				if not use:is_effect_row_extend() then
+			if val:is_effect_row() then
+				local val_components = val:unwrap_effect_row()
+				if not use:is_effect_row() then
 					return false, "consumption of effect row constraint isn't an effect row?"
 				end
-				local use_components, use_rest = use:unwrap_effect_row_extend()
+				local use_components = use:unwrap_effect_row()
 				if not use_components:superset(val_components) then
 					return false, "consumption of effect row doesn't satisfy all components of production"
 				end
 				--TODO allow polymorphism
 				error "NYI effect polymorphism"
+			else
+				error "NYI weird effect row?"
 			end
 
 			return true
@@ -2544,7 +2546,8 @@ local host_tuple_make_prefix_mt = {
 	__call = function(self, i)
 		local prefix_elements = flex_value_array()
 		for x = 1, i do
-			prefix_elements:append(flex_value.stuck(stuck_value.tuple_element_access(self.subject_stuck_value, x)))
+			local prefix_element = flex_value.stuck(stuck_value.tuple_element_access(self.subject_stuck_value, x))
+			prefix_elements:append(prefix_element)
 		end
 		return U.notail(flex_value.tuple_value(prefix_elements))
 	end,
@@ -2578,7 +2581,8 @@ local function make_tuple_prefix(subject_type, subject_value)
 			function make_prefix(i)
 				local prefix_elements = flex_value_array()
 				for x = 1, i do
-					prefix_elements:append(flex_value.stuck(stuck_value.tuple_element_access(subject_stuck_value, x)))
+					local prefix_element = flex_value.stuck(stuck_value.tuple_element_access(subject_stuck_value, x))
+					prefix_elements:append(prefix_element)
 				end
 				return U.notail(flex_value.tuple_value(prefix_elements))
 			end
