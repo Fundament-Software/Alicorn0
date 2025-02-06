@@ -341,24 +341,27 @@ local EffectRowRelation = setmetatable({
 		function(l_ctx, val, r_ctx, use, cause)
 			if val:is_effect_empty() then
 				return true
-			end
-			if val:is_effect_row_extend() then
-				local val_components, val_rest = val:unwrap_effect_row_extend()
+			elseif val:is_effect_row() then
+				local val_components = val:unwrap_effect_row()
 				if use:is_effect_empty() then
 					return false, "production has effect requirements that the consumption doesn't fulfill"
 				end
-				if not use:is_effect_row_extend() then
+				if not use:is_effect_row() then
 					return false, "consumption of effect row constraint isn't an effect row?"
 				end
-				local use_components, use_rest = use:unwrap_effect_row_extend()
+				local use_components = use:unwrap_effect_row()
 				if not use_components:superset(val_components) then
 					return false, "consumption of effect row doesn't satisfy all components of production"
 				end
-				--TODO allow polymorphism
-				if val_rest:is_effect_empty() and use_rest:is_effect_empty() then
-					return true
-				end
-				error "NYI effect polymorphism"
+			elseif val:is_effect_row_extend() then
+				error "NYI effect row extend"
+				-- -- TODO allow polymorphism
+				-- if val_rest:is_effect_empty() and use_rest:is_effect_empty() then
+				-- 	return true
+				-- end
+				-- error "NYI effect polymorphism"
+			else
+				error "woah"
 			end
 
 			return true
@@ -2501,7 +2504,8 @@ local host_tuple_make_prefix_mt = {
 	__call = function(self, i)
 		local prefix_elements = flex_value_array()
 		for x = 1, i do
-			prefix_elements:append(flex_value.stuck(stuck_value.tuple_element_access(self.subject_stuck_value, x)))
+			local prefix_element = flex_value.stuck(stuck_value.tuple_element_access(self.subject_stuck_value, x))
+			prefix_elements:append(prefix_element)
 		end
 		return U.notail(flex_value.tuple_value(prefix_elements))
 	end,
@@ -2535,7 +2539,8 @@ local function make_tuple_prefix(subject_type, subject_value)
 			function make_prefix(i)
 				local prefix_elements = flex_value_array()
 				for x = 1, i do
-					prefix_elements:append(flex_value.stuck(stuck_value.tuple_element_access(subject_stuck_value, x)))
+					local prefix_element = flex_value.stuck(stuck_value.tuple_element_access(subject_stuck_value, x))
+					prefix_elements:append(prefix_element)
 				end
 				return U.notail(flex_value.tuple_value(prefix_elements))
 			end
@@ -2698,7 +2703,7 @@ local function make_inner_context2(desc_a, make_prefix_a, l_ctx, desc_b, make_pr
 		if tuple_types_a:len() == tuple_vals:len() then
 			local prefix = flex_value.tuple_value(tuple_vals)
 			element_type_a = apply_value(f_a, prefix, l_ctx)
-			element_type_b = apply_value(f_b, prefix, l_ctx) -- This looks wrong but it's necessary to fix a missing placeholder problem
+			element_type_b = apply_value(f_b, prefix, r_ctx) -- This looks wrong but it's necessary to fix a missing placeholder problem
 
 			if element_type_a:is_singleton() then
 				local _, val = element_type_a:unwrap_singleton()
