@@ -10,7 +10,9 @@
             },
             "verbose": true,
             "args": [
-                "runtest.lua"
+                "runtest.lua",
+                "-T",
+                "tests/host-prog.alc"
             ]
         },
         {

@@ -337,20 +337,25 @@ local EffectRowRelation = setmetatable({
 		---@param cause constraintcause
 		---@return boolean, string?
 		function(l_ctx, val, r_ctx, use, cause)
-			if val:is_effect_row_extend() then
-				local val_components, val_rest = val:unwrap_effect_row_extend()
-				if not use:is_effect_row_extend() then
-					return false, "consumption of effect row constraint isn't an effect row?"
+			local val_is_effect_row_extend, val_base, val_rest = val:as_effect_row_extend()
+			local use_is_effect_row_extend, use_base, use_rest = use:as_effect_row_extend()
+			local val_is_effect_row, val_components = val:as_effect_row()
+			local use_is_effect_row, use_components = use:as_effect_row()
+			if val_is_effect_row and use_is_effect_row then
+				---@cast use_components SetValue<table>
+				if use_components:superset(val_components) then
+					return true
 				end
-				local use_components, use_rest = use:unwrap_effect_row_extend()
-				if not use_components:superset(val_components) then
-					return false, "consumption of effect row doesn't satisfy all components of production"
-				end
-				--TODO allow polymorphism
-				error "NYI effect polymorphism"
+				return false, "consumption of effect row doesn't satisfy all components of production"
+				-- --TODO allow polymorphism
+				-- error("NYI effect polymorphism")
+			elseif
+				(val_is_effect_row or val_is_effect_row_extend) or (use_is_effect_row or use_is_effect_row_extend)
+			then
+				error("NYI weird effect row?")
 			end
 
-			return true
+			return false, "consumption of effect row constraint isn't an effect row?"
 		end
 	),
 }, subtype_relation_mt)
