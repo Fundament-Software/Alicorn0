@@ -1094,11 +1094,11 @@ typed_term:define_enum("typed", {
 		"left",  typed_term,
 		"right", typed_term,
 	} },
-	{ "constrained_type", { 
+	{ "constrained_type", {
 		"constraints", array(constraintelem),
 		"ctx", typechecking_context_type,
 	} },
-}) 
+})
 
 ---@param v table
 ---@param ctx TypecheckingContext
