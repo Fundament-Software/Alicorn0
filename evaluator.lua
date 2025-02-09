@@ -726,7 +726,7 @@ function gather_usages(val, usages, context_len, ambient_typechecking_context, g
 		error("val isn't strict or stuck????????")
 	end
 	if gas == nil then
-		gas = U.GasTank(30000)
+		gas = U.GasTank(50000)
 	end
 	if gas:empty() then
 		error("gather_usages is out of gas")
@@ -5704,6 +5704,24 @@ function TypeCheckerState:queue_constrain(l_ctx, val, rel, r_ctx, use, cause)
 	U.append(self.pending, EdgeNotif.Constrain(l, rel, r, self.block_level, cause))
 end
 
+-- DEBUG
+local loud_call_counters = false
+
+-- DEBUG
+local send_constrain_call_counter = 0
+local send_constrain_call_counter_scale = 10000
+local send_constrain_allowed_call_count = send_constrain_call_counter_scale * 6
+
+-- DEBUG
+local constrain_call_counter = 0
+local constrain_call_counter_scale = 10000
+local constrain_allowed_call_count = constrain_call_counter_scale * 6
+
+-- DEBUG
+local flow_call_counter = 0
+local flow_call_counter_scale = 250
+local flow_allowed_call_count = flow_call_counter_scale * 29
+
 ---@param l_ctx TypecheckingContext
 ---@param val flex_value
 ---@param rel SubtypeRelation
@@ -5712,6 +5730,16 @@ end
 ---@param cause any
 ---@return boolean, string?
 function TypeCheckerState:send_constrain(l_ctx, val, rel, r_ctx, use, cause)
+	send_constrain_call_counter = send_constrain_call_counter + 1
+	if
+		(loud_call_counters or send_constrain_call_counter >= send_constrain_allowed_call_count)
+		and send_constrain_call_counter % send_constrain_call_counter_scale == 0
+	then
+		print(string.format("TypeCheckerState:send_constrain call %d", send_constrain_call_counter))
+		if send_constrain_call_counter >= send_constrain_allowed_call_count then
+			U.debug_break()
+		end
+	end
 	if #self.pending == 0 then
 		return U.notail(self:constrain(val, l_ctx, use, r_ctx, rel, cause))
 	else
@@ -5831,6 +5859,16 @@ function TypeCheckerState:flow(val, val_context, use, use_context, cause)
 	if not flex_value.value_check(use) then
 		error("use isn't a flex_value in flow()! (Did you pass a strict or stuck value?)")
 	end
+	flow_call_counter = flow_call_counter + 1
+	-- if
+	-- 	(loud_call_counters or flow_call_counter >= flow_allowed_call_count)
+	-- 	and flow_call_counter % flow_call_counter_scale == 0
+	-- then
+	-- 	print(string.format("TypeCheckerState:flow call %d", flow_call_counter))
+	-- 	if flow_call_counter >= flow_allowed_call_count then
+	-- 		U.debug_break()
+	-- 	end
+	-- end
 	--terms.verify_placeholders(val, val_context, self.values)
 	--terms.verify_placeholders(use, use_context, self.values)
 	local r = { self:constrain(val, val_context, use, use_context, UniverseOmegaRelation, cause) }
@@ -6134,6 +6172,24 @@ function TypeCheckerState:constrain(val, val_context, use, use_context, rel, cau
 	if #self.pending ~= 0 then
 		error("pending not empty at start of constrain!")
 	end
+
+	constrain_call_counter = constrain_call_counter + 1
+	if
+		(loud_call_counters or constrain_call_counter >= constrain_allowed_call_count)
+		and constrain_call_counter % constrain_call_counter_scale == 0
+	then
+		print(
+			string.format(
+				"TypeCheckerState:constrain call %d (TypeCheckerState:send_constrain call %d)",
+				constrain_call_counter,
+				send_constrain_call_counter
+			)
+		)
+		if constrain_call_counter >= constrain_allowed_call_count then
+			U.debug_break()
+		end
+	end
+
 	--TODO: add contexts to queue_work if appropriate
 	--self:queue_work(val, val_context, use, use_context, cause)
 

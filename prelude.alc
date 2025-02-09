@@ -939,8 +939,10 @@ let host-number-fold-indep = lambda_implicit (T : type-omega)
 				->
 				((fold  : wrapped(T)))
 	lambda (n : host-number, f : (forall (i  : host-number, acc  : T) -> (resacc  : T)), acc  : T)
-		let  (fold) = inner(n, wrap(f), wrap(acc))
-		unwrap(fold)
+		####let (fold) =
+			inner(n, wrap(f), wrap(acc))
+		####unwrap(fold)
+		acc
 
 let duplicate-tuple-desc = lambda_implicit (U : universe)
 	lambda (n : host-number, T : U)
