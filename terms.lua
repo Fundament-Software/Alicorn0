@@ -1094,11 +1094,16 @@ typed_term:define_enum("typed", {
 		"left",  typed_term,
 		"right", typed_term,
 	} },
-	{ "constrained_type", {
+	{ "constrained_type", { 
 		"constraints", array(constraintelem),
 		"ctx", typechecking_context_type,
 	} },
 })
+
+-- DEBUG
+local verify_placeholder_lite_call_counter = 0
+local verify_placeholder_lite_call_counter_scale = 10000000
+local verify_placeholder_lite_allowed_call_count = verify_placeholder_lite_call_counter_scale * 3
 
 ---@param v table
 ---@param ctx TypecheckingContext
@@ -1108,6 +1113,15 @@ local function verify_placeholder_lite(v, ctx, nested)
 	-- If it's not a table we don't care
 	if type(v) ~= "table" then
 		return true
+	end
+
+	verify_placeholder_lite_call_counter = verify_placeholder_lite_call_counter + 1
+	if
+		verify_placeholder_lite_call_counter >= verify_placeholder_lite_allowed_call_count
+		and verify_placeholder_lite_call_counter % verify_placeholder_lite_call_counter_scale == 0
+	then
+		print(string.format("verify_placeholder_lite call %d", verify_placeholder_lite_call_counter))
+		U.debug_break()
 	end
 
 	-- Special handling for arrays

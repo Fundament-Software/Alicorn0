@@ -641,6 +641,8 @@ local gather_usages
 ---@param gas GasTank tracks recursive calls
 ---@return typed
 local function gather_constraint_usages(mv, usages, context_len, ambient_typechecking_context, gas)
+	local current_gas = gas.gas
+
 	-- Mimics logic in slice_constraints_for but just gathers usages
 	---@param id integer
 	---@return flex_value
@@ -685,35 +687,45 @@ local function gather_constraint_usages(mv, usages, context_len, ambient_typeche
 		return edge.left
 	end, function(edge)
 		gather_usages(getnode(edge.left), usages, context_len, ambient_typechecking_context, gas)
+		current_gas = gas.gas
 	end)
 	slice_edgeset(typechecker_state.graph.constrain_edges:from(mv.usage), function(edge)
 		return edge.right
 	end, function(edge)
 		gather_usages(getnode(edge.right), usages, context_len, ambient_typechecking_context, gas)
+		current_gas = gas.gas
 	end)
 	slice_edgeset(typechecker_state.graph.leftcall_edges:to(mv.usage), function(edge)
 		return edge.left
 	end, function(edge)
 		gather_usages(getnode(edge.left), usages, context_len, ambient_typechecking_context, gas)
+		current_gas = gas.gas
 		gather_usages(edge.arg, usages, context_len, ambient_typechecking_context, gas)
+		current_gas = gas.gas
 	end)
 	slice_edgeset(typechecker_state.graph.leftcall_edges:from(mv.usage), function(edge)
 		return edge.right
 	end, function(edge)
 		gather_usages(edge.arg, usages, context_len, ambient_typechecking_context, gas)
+		current_gas = gas.gas
 		gather_usages(getnode(edge.right), usages, context_len, ambient_typechecking_context, gas)
+		current_gas = gas.gas
 	end)
 	slice_edgeset(typechecker_state.graph.rightcall_edges:to(mv.usage), function(edge)
 		return edge.left
 	end, function(edge)
 		gather_usages(getnode(edge.left), usages, context_len, ambient_typechecking_context, gas)
+		current_gas = gas.gas
 		gather_usages(edge.arg, usages, context_len, ambient_typechecking_context, gas)
+		current_gas = gas.gas
 	end)
 	slice_edgeset(typechecker_state.graph.rightcall_edges:from(mv.usage), function(edge)
 		return edge.right
 	end, function(edge)
 		gather_usages(getnode(edge.right), usages, context_len, ambient_typechecking_context, gas)
+		current_gas = gas.gas
 		gather_usages(edge.arg, usages, context_len, ambient_typechecking_context, gas)
+		current_gas = gas.gas
 	end)
 end
 
@@ -732,57 +744,75 @@ function gather_usages(val, usages, context_len, ambient_typechecking_context, g
 			error(string.format("gather_usages is out of gas: %s", self))
 		end)
 	end
+	local current_gas = gas.gas
 
 	local val = val:unwrap_stuck()
 	if val:is_pi() then
 		local param_type, param_info, result_type, result_info = val:unwrap_pi()
 		local param_type = gather_usages(param_type, usages, context_len, ambient_typechecking_context, gas:decrement())
+		current_gas = gas.gas
 		local param_info = gather_usages(param_info, usages, context_len, ambient_typechecking_context, gas:decrement())
+		current_gas = gas.gas
 		local result_type =
 			gather_usages(result_type, usages, context_len, ambient_typechecking_context, gas:decrement())
+		current_gas = gas.gas
 		local result_info =
 			gather_usages(result_info, usages, context_len, ambient_typechecking_context, gas:decrement())
+		current_gas = gas.gas
 	elseif val:is_closure() then
 		local param_name, code, capture, capture_info, param_info = val:unwrap_closure()
 
 		local capture_sub = gather_usages(capture, usages, context_len, ambient_typechecking_context, gas:decrement())
+		current_gas = gas.gas
 	elseif val:is_operative_value() then
 		local userdata = val:unwrap_operative_value()
 		local userdata = gather_usages(userdata, usages, context_len, ambient_typechecking_context, gas:decrement())
+		current_gas = gas.gas
 	elseif val:is_operative_type() then
 		local handler, userdata_type = val:unwrap_operative_type()
 		local typed_handler = gather_usages(handler, usages, context_len, ambient_typechecking_context, gas:decrement())
+		current_gas = gas.gas
 		local typed_userdata_type =
 			gather_usages(userdata_type, usages, context_len, ambient_typechecking_context, gas:decrement())
+		current_gas = gas.gas
 	elseif val:is_tuple_value() then
 		local elems = val:unwrap_tuple_value()
 		for _, v in elems:ipairs() do
 			gather_usages(v, usages, context_len, ambient_typechecking_context, gas:decrement())
+			current_gas = gas.gas
 		end
 	elseif val:is_tuple_type() then
 		local desc = val:unwrap_tuple_type()
 		local desc = gather_usages(desc, usages, context_len, ambient_typechecking_context, gas:decrement())
+		current_gas = gas.gas
 	elseif val:is_tuple_desc_type() then
 		local universe = val:unwrap_tuple_desc_type()
 		local typed_universe =
 			gather_usages(universe, usages, context_len, ambient_typechecking_context, gas:decrement())
+		current_gas = gas.gas
 	elseif val:is_tuple_desc_concat_indep() then
 		local pfx, sfx = val:unwrap_tuple_desc_concat_indep()
 		gather_usages(pfx, usages, context_len, ambient_typechecking_context, gas:decrement())
+		current_gas = gas.gas
 		gather_usages(sfx, usages, context_len, ambient_typechecking_context, gas:decrement())
+		current_gas = gas.gas
 	elseif val:is_enum_value() then
 		local constructor, arg = val:unwrap_enum_value()
 		local arg = gather_usages(arg, usages, context_len, ambient_typechecking_context, gas:decrement())
+		current_gas = gas.gas
 	elseif val:is_enum_type() then
 		local desc = val:unwrap_enum_type()
 		local desc_sub = gather_usages(desc, usages, context_len, ambient_typechecking_context, gas:decrement())
+		current_gas = gas.gas
 	elseif val:is_enum_desc_type() then
 		local univ = val:unwrap_enum_desc_type()
 		local univ_sub = gather_usages(univ, usages, context_len, ambient_typechecking_context, gas:decrement())
+		current_gas = gas.gas
 	elseif val:is_enum_desc_value() then
 		local variants = val:unwrap_enum_desc_value()
 		for k, v in variants:pairs() do
 			gather_usages(v, usages, context_len, ambient_typechecking_context, gas:decrement())
+			current_gas = gas.gas
 		end
 	elseif val:is_record_value() then
 		-- TODO: How to deal with a map?
@@ -794,9 +824,11 @@ function gather_usages(val, usages, context_len, ambient_typechecking_context, g
 	elseif val:is_srel_type() then
 		local target = val:unwrap_srel_type()
 		local target_sub = gather_usages(target, usages, context_len, ambient_typechecking_context, gas:decrement())
+		current_gas = gas.gas
 	elseif val:is_variance_type() then
 		local target = val:unwrap_variance_type()
 		local target_sub = gather_usages(target, usages, context_len, ambient_typechecking_context, gas:decrement())
+		current_gas = gas.gas
 	elseif val:is_object_value() then
 		-- TODO: this needs to be evaluated properly because it contains a value
 		error("Not yet implemented")
@@ -814,29 +846,37 @@ function gather_usages(val, usages, context_len, ambient_typechecking_context, g
 
 			if not (mv.block_level < typechecker_state.block_level) then
 				gather_constraint_usages(mv, usages, context_len, ambient_typechecking_context, gas)
+				current_gas = gas.gas
 			end
 		else
 		end
 	elseif val:is_tuple_element_access() then
 		local subject, index = val:unwrap_tuple_element_access()
 		gather_usages(flex_value.stuck(subject), usages, context_len, ambient_typechecking_context, gas:decrement())
+		current_gas = gas.gas
 	elseif val:is_host_unwrap() then
 		local boxed = val:unwrap_host_unwrap()
 		gather_usages(flex_value.stuck(boxed), usages, context_len, ambient_typechecking_context, gas:decrement())
+		current_gas = gas.gas
 	elseif val:is_host_wrap() then
 		local to_wrap = val:unwrap_host_wrap()
 		gather_usages(flex_value.stuck(to_wrap), usages, context_len, ambient_typechecking_context, gas:decrement())
+		current_gas = gas.gas
 	elseif val:is_host_unwrap() then
 		local to_unwrap = val:unwrap_host_unwrap()
 		gather_usages(flex_value.stuck(to_unwrap), usages, context_len, ambient_typechecking_context, gas:decrement())
+		current_gas = gas.gas
 	elseif val:is_host_application() then
 		local fn, arg = val:unwrap_host_application()
 		gather_usages(flex_value.stuck(arg), usages, context_len, ambient_typechecking_context, gas:decrement())
+		current_gas = gas.gas
 	elseif val:is_host_tuple() then
 		local leading, stuck, trailing = val:unwrap_host_tuple()
 		gather_usages(flex_value.stuck(stuck), usages, context_len, ambient_typechecking_context, gas:decrement())
+		current_gas = gas.gas
 		for _, elem in trailing:ipairs() do
 			gather_usages(elem, usages, context_len, ambient_typechecking_context, gas:decrement())
+			current_gas = gas.gas
 		end
 	elseif val:is_host_int_fold() then
 		local num, fun, acc = val:unwrap_host_int_fold()
@@ -846,60 +886,83 @@ function gather_usages(val, usages, context_len, ambient_typechecking_context, g
 	elseif val:is_host_if() then
 		local subject, consequent, alternate = val:unwrap_host_if()
 		gather_usages(flex_value.stuck(subject), usages, context_len, ambient_typechecking_context, gas:decrement())
+		current_gas = gas.gas
 		gather_usages(consequent, usages, context_len, ambient_typechecking_context, gas:decrement())
+		current_gas = gas.gas
 		gather_usages(alternate, usages, context_len, ambient_typechecking_context, gas:decrement())
+		current_gas = gas.gas
 	elseif val:is_application() then
 		local fn, arg = val:unwrap_application()
 		gather_usages(flex_value.stuck(fn), usages, context_len, ambient_typechecking_context, gas:decrement())
+		current_gas = gas.gas
 		gather_usages(arg, usages, context_len, ambient_typechecking_context, gas:decrement())
+		current_gas = gas.gas
 	elseif val:is_host_function_type() then
 		local param_type, result_type, res_info = val:unwrap_host_function_type()
 		local param_type = gather_usages(param_type, usages, context_len, ambient_typechecking_context, gas:decrement())
+		current_gas = gas.gas
 		local result_type =
 			gather_usages(result_type, usages, context_len, ambient_typechecking_context, gas:decrement())
+		current_gas = gas.gas
 		local res_info = gather_usages(res_info, usages, context_len, ambient_typechecking_context, gas:decrement())
+		current_gas = gas.gas
 	elseif val:is_host_wrapped_type() then
 		local type = val:unwrap_host_wrapped_type()
 		local type = gather_usages(type, usages, context_len, ambient_typechecking_context, gas:decrement())
+		current_gas = gas.gas
 	elseif val:is_host_user_defined_type() then
 		local id, family_args = val:unwrap_host_user_defined_type()
 		for _, v in family_args:ipairs() do
 			gather_usages(v, usages, context_len, ambient_typechecking_context, gas:decrement())
+			current_gas = gas.gas
 		end
 	elseif val:is_host_tuple_type() then
 		local desc = val:unwrap_host_tuple_type()
 		local desc = gather_usages(desc, usages, context_len, ambient_typechecking_context, gas:decrement())
+		current_gas = gas.gas
 	elseif val:is_range() then
 		local lower_bounds, upper_bounds, relation = val:unwrap_range()
 		for _, v in lower_bounds:ipairs() do
 			local sub = gather_usages(v, usages, context_len, ambient_typechecking_context, gas:decrement())
+			current_gas = gas.gas
 		end
 		for _, v in upper_bounds:ipairs() do
 			local sub = gather_usages(v, usages, context_len, ambient_typechecking_context, gas:decrement())
+			current_gas = gas.gas
 		end
 	elseif val:is_singleton() then
 		local supertype, val = val:unwrap_singleton()
 		local supertype_tm =
 			gather_usages(supertype, usages, context_len, ambient_typechecking_context, gas:decrement())
+		current_gas = gas.gas
 		local val_tm = gather_usages(val, usages, context_len, ambient_typechecking_context, gas:decrement())
+		current_gas = gas.gas
 	elseif val:is_union_type() then
 		local a, b = val:unwrap_union_type()
 		gather_usages(a, usages, context_len, ambient_typechecking_context, gas:decrement())
+		current_gas = gas.gas
 		gather_usages(b, usages, context_len, ambient_typechecking_context, gas:decrement())
+		current_gas = gas.gas
 	elseif val:is_intersection_type() then
 		local a, b = val:unwrap_intersection_type()
 		gather_usages(a, usages, context_len, ambient_typechecking_context, gas:decrement())
+		current_gas = gas.gas
 		gather_usages(b, usages, context_len, ambient_typechecking_context, gas:decrement())
+		current_gas = gas.gas
 	elseif val:is_program_type() then
 		local effect, res = val:unwrap_program_type()
 		gather_usages(effect, usages, context_len, ambient_typechecking_context, gas:decrement())
+		current_gas = gas.gas
 		gather_usages(res, usages, context_len, ambient_typechecking_context, gas:decrement())
+		current_gas = gas.gas
 	elseif val:is_effect_row_extend() then
 		local row, rest = val:unwrap_effect_row_extend()
 		gather_usages(rest, usages, context_len, ambient_typechecking_context, gas:decrement())
+		current_gas = gas.gas
 	elseif val:is_host_intrinsic() then
 		local source, anchor = val:unwrap_host_intrinsic()
 		gather_usages(flex_value.stuck(source), usages, context_len, ambient_typechecking_context, gas:decrement())
+		current_gas = gas.gas
 	else
 		error("Unhandled value kind in gather_usages: " .. val.kind)
 	end
@@ -5818,6 +5881,24 @@ function TypeCheckerState:queue_constrain(l_ctx, val, rel, r_ctx, use, cause)
 	U.append(self.pending, EdgeNotif.Constrain(l, rel, r, self.block_level, cause))
 end
 
+-- DEBUG
+local loud_call_counters = false
+
+-- DEBUG
+local send_constrain_call_counter = 0
+local send_constrain_call_counter_scale = 10000
+local send_constrain_allowed_call_count = send_constrain_call_counter_scale * 6
+
+-- DEBUG
+local constrain_call_counter = 0
+local constrain_call_counter_scale = 10000
+local constrain_allowed_call_count = constrain_call_counter_scale * 6
+
+-- DEBUG
+local flow_call_counter = 0
+local flow_call_counter_scale = 250
+local flow_allowed_call_count = flow_call_counter_scale * 29
+
 ---@param l_ctx TypecheckingContext
 ---@param val flex_value
 ---@param rel SubtypeRelation
@@ -5826,6 +5907,16 @@ end
 ---@param cause any
 ---@return boolean, string?
 function TypeCheckerState:send_constrain(l_ctx, val, rel, r_ctx, use, cause)
+	send_constrain_call_counter = send_constrain_call_counter + 1
+	if
+		(loud_call_counters or send_constrain_call_counter >= send_constrain_allowed_call_count)
+		and send_constrain_call_counter % send_constrain_call_counter_scale == 0
+	then
+		print(string.format("TypeCheckerState:send_constrain call %d", send_constrain_call_counter))
+		if send_constrain_call_counter >= send_constrain_allowed_call_count then
+			U.debug_break()
+		end
+	end
 	if #self.pending == 0 then
 		return U.notail(self:constrain(val, l_ctx, use, r_ctx, rel, cause))
 	else
@@ -5945,6 +6036,16 @@ function TypeCheckerState:flow(val, val_context, use, use_context, cause)
 	if not flex_value.value_check(use) then
 		error("use isn't a flex_value in flow()! (Did you pass a strict or stuck value?)")
 	end
+	flow_call_counter = flow_call_counter + 1
+	-- if
+	-- 	(loud_call_counters or flow_call_counter >= flow_allowed_call_count)
+	-- 	and flow_call_counter % flow_call_counter_scale == 0
+	-- then
+	-- 	print(string.format("TypeCheckerState:flow call %d", flow_call_counter))
+	-- 	if flow_call_counter >= flow_allowed_call_count then
+	-- 		U.debug_break()
+	-- 	end
+	-- end
 	--terms.verify_placeholders(val, val_context, self.values)
 	--terms.verify_placeholders(use, use_context, self.values)
 	local r = { self:constrain(val, val_context, use, use_context, UniverseOmegaRelation, cause) }
@@ -6248,6 +6349,24 @@ function TypeCheckerState:constrain(val, val_context, use, use_context, rel, cau
 	if #self.pending ~= 0 then
 		error("pending not empty at start of constrain!")
 	end
+
+	constrain_call_counter = constrain_call_counter + 1
+	if
+		(loud_call_counters or constrain_call_counter >= constrain_allowed_call_count)
+		and constrain_call_counter % constrain_call_counter_scale == 0
+	then
+		print(
+			string.format(
+				"TypeCheckerState:constrain call %d (TypeCheckerState:send_constrain call %d)",
+				constrain_call_counter,
+				send_constrain_call_counter
+			)
+		)
+		if constrain_call_counter >= constrain_allowed_call_count then
+			U.debug_break()
+		end
+	end
+
 	--TODO: add contexts to queue_work if appropriate
 	--self:queue_work(val, val_context, use, use_context, cause)
 
