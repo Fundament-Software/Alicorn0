@@ -1069,19 +1069,27 @@ local function substitute_inner_impl(val, mappings, mappings_changed, context_le
 			error("substitute_inner NYI free with kind " .. free.kind)
 		end
 
-		if mappings_changed and free:is_placeholder() then
-			mapping = mappings[lookup]
-			if mapping == nil then
-				error(
-					string.format(
-						"no valid mapping for placeholder %s given lookup ID %s when mappings have changed",
-						free:pretty_print(ambient_typechecking_context),
-						tostring(lookup)
+		if mappings_changed then
+			if free:is_placeholder() then
+				mapping = mappings[lookup]
+				if mapping == nil then
+					error(
+						string.format(
+							"no valid mapping for placeholder %s given lookup ID %s when mappings have changed",
+							free:pretty_print(ambient_typechecking_context),
+							tostring(lookup)
+						)
 					)
-				)
+				end
+			elseif free:is_unique() then
+				mapping = mappings[lookup] or mapping or default_mapping
+			elseif free:is_metavariable() then
+				mapping = mappings[lookup] or default_mapping
+			else
+				error("NYI substitute_inner mappings_changed free with kind " .. free.kind)
 			end
 		else
-			mapping = mappings[lookup] or mapping or default_mapping
+			mapping = mapping or default_mapping
 		end
 		if mapping then
 			return mapping
