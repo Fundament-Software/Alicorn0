@@ -35,10 +35,12 @@ local trait_type_mt = {
 	},
 }
 
+local trait_impls_mt = { __mode = "k" }
+
 ---@param name string
 ---@return LuaTrait
 local function declare_trait(name)
-	return setmetatable({ name = name, methods = {}, impls = {} }, trait_type_mt)
+	return setmetatable({ name = name, methods = {}, impls = setmetatable({}, trait_impls_mt) }, trait_type_mt)
 end
 
 -- this trait system is not powerful enough to represent is/unwrap/as
