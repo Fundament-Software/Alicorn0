@@ -1658,11 +1658,9 @@ for _, t in ipairs {
 	host_user_defined_id,
 	SubtypeRelation,
 } do
-	traits.freeze:implement_on(t, {
-		freeze = function(_, val)
-			return val
-		end,
-	})
+	traits.freeze:implement_method_on(t, "freeze", function(_, val)
+		return val
+	end)
 end
 
 local host_syntax_type = strict_value.host_user_defined_type({ name = "syntax" }, array(strict_value)())

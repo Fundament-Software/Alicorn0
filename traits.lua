@@ -1,36 +1,54 @@
 -- SPDX-License-Identifier: Apache-2.0
 -- SPDX-FileCopyrightText: 2025 Fundament Software SPC <https://fundament.software>
+
+local next, rawget, rawset, type = next, rawget, rawset, type
+
 ---@class LuaTrait
 ---@field declare_method fun(self: LuaTrait, methodname: string)
+---@field implement_method_on fun(self: LuaTrait, ty: Type, method_name: string, method: function)
 ---@field implement_on fun(self: LuaTrait, ty: Type, methods: { [string]: function })
 ---@field get fun(self: LuaTrait, ty: Type): { [string]: function }
 
 local trait_type_mt = {
 	__index = {
 		declare_method = function(self, methodname)
-			if self.methods[methodname] then
+			local self_methods = rawget(self, "methods")
+			if self_methods[methodname] then
 				error("trait " .. self.name .. " method " .. methodname .. " is already declared")
 			end
-			self.methods[methodname] = true
+			self_methods[methodname] = true
+			rawset(self, "method_count", rawget(self, "method_count") + 1)
+		end,
+		implement_method_on = function(self, ty, method_name, method)
+			local self_impls = rawget(self, "impls")
+			if rawget(self_impls, ty) then
+				error(("trait %s already implemented on type %s"):format(self.name, tostring(ty)))
+			elseif rawget(self, "method_count") ~= 1 then
+				error(("trait %s has %d methods, requiring `:implement_on()`"):format(self.name, rawget(self, "method_count")))
+			elseif rawget(self, "methods")[method_name] ~= nil and method ~= nil then
+				rawset(self_impls, ty, { [method_name] = method })
+			else
+				error(
+					("missing methods to implment trait %s on type %s"):format(self.name, tostring(ty))
+				)
+			end
 		end,
 		implement_on = function(self, ty, methods)
-			if type(ty) ~= "table" then
-				error("trying to implement on something that isn't a type")
-			end
-			if self.impls[ty] then
-				error("trait " .. self.name .. " already implemented on type " .. tostring(ty))
+			local self_impls, self_methods = rawget(self, "impls"), rawget(self, "methods")
+			if rawget(self_impls, ty) then
+				error(("trait %s already implemented on type %s"):format(self.name, tostring(ty)))
 			end
 			local implemented_methods = {}
-			for k in pairs(self.methods) do
+			local k = next(self_methods)
+			while k ~= nil do
 				implemented_methods[k] = methods[k]
-					or error(
-						"missing method " .. k .. " implementing trait " .. self.name .. " on type " .. tostring(ty)
-					)
+					or error(("missing method %s implementing trait %s on type %s"):format(k, self.name, tostring(ty)))
+				k = next(self_methods, k)
 			end
-			self.impls[ty] = implemented_methods
+			rawset(self_impls, ty, implemented_methods)
 		end,
 		get = function(self, ty)
-			return self.impls[ty] or nil --error("trait " .. self.name .. " not implemented on type " .. tostring(ty))
+			return rawget(rawget(self, "impls"), ty) or nil --error("trait " .. self.name .. " not implemented on type " .. tostring(ty))
 		end,
 	},
 }
@@ -38,7 +56,7 @@ local trait_type_mt = {
 ---@param name string
 ---@return LuaTrait
 local function declare_trait(name)
-	return setmetatable({ name = name, methods = {}, impls = {} }, trait_type_mt)
+	return setmetatable({ name = name, method_count = 0, methods = {}, impls = {} }, trait_type_mt)
 end
 
 -- this trait system is not powerful enough to represent is/unwrap/as

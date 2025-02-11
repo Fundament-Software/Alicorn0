@@ -255,11 +255,9 @@ local function define_record(self, kind, params_with_types)
 	self.__newindex = function()
 		error("records are immutable!")
 	end
-	traits.value_name:implement_on(self, {
-		value_name = function()
-			return kind
-		end,
-	})
+	traits.value_name:implement_method_on(self, "value_name", function()
+		return kind
+	end)
 	self:derive(derivers.eq)
 	self:derive(derivers.unwrap)
 	self:derive(derivers.diff)
@@ -370,11 +368,9 @@ local function define_enum(self, name, variants)
 	self.__newindex = function()
 		error("enums are immutable!")
 	end
-	traits.value_name:implement_on(self, {
-		value_name = function()
-			return name
-		end,
-	})
+	traits.value_name:implement_method_on(self, "value_name", function()
+		return name
+	end)
 	self:derive(derivers.eq)
 	self:derive(derivers.is)
 	self:derive(derivers.unwrap)
@@ -591,11 +587,9 @@ local function define_foreign(self, value_check, lsp_type)
 	---@cast self ForeignType
 	self.value_check = value_check
 	self.lsp_type = lsp_type
-	traits.value_name:implement_on(self, {
-		value_name = function()
-			return lsp_type
-		end,
-	})
+	traits.value_name:implement_method_on(self, "value_name", function()
+		return lsp_type
+	end)
 	return self
 end
 
@@ -813,15 +807,13 @@ local function define_map(self, key_type, value_type)
 		pretty_print = map_pretty_print,
 		default_print = map_pretty_print,
 	})
-	traits.value_name:implement_on(self, {
-		value_name = function()
-			return ("MapValue<%s, %s>"):format(
-				traits.value_name:get(key_type).value_name(),
-				traits.value_name:get(value_type).value_name()
-			)
-		end,
-	})
-	traits.freeze:implement_on(self, { freeze = map_freeze })
+	traits.value_name:implement_method_on(self, "value_name", function()
+		return ("MapValue<%s, %s>"):format(
+			traits.value_name:get(key_type).value_name(),
+			traits.value_name:get(value_type).value_name()
+		)
+	end)
+	traits.freeze:implement_method_on(self, "freeze", map_freeze)
 	return self
 end
 define_map = U.memoize(define_map, false)
@@ -1026,12 +1018,10 @@ local function define_set(self, key_type)
 		pretty_print = set_pretty_print,
 		default_print = set_pretty_print,
 	})
-	traits.value_name:implement_on(self, {
-		value_name = function()
-			return ("SetValue<%s>"):format(traits.value_name:get(key_type).value_name())
-		end,
-	})
-	traits.freeze:implement_on(self, { freeze = set_freeze })
+	traits.value_name:implement_method_on(self, "value_name", function()
+		return ("SetValue<%s>"):format(traits.value_name:get(key_type).value_name())
+	end)
+	traits.freeze:implement_method_on(self, "freeze", set_freeze)
 	return self
 end
 define_set = U.memoize(define_set, false)
@@ -1438,15 +1428,11 @@ local function define_array(self, value_type)
 		pretty_print = array_pretty_print,
 		default_print = array_pretty_print,
 	})
-	traits.diff:implement_on(self, {
-		diff = gen_array_diff_fn(self, value_type),
-	})
-	traits.value_name:implement_on(self, {
-		value_name = function()
-			return ("ArrayValue<%s>"):format(traits.value_name:get(value_type).value_name())
-		end,
-	})
-	traits.freeze:implement_on(self, { freeze = array_freeze })
+	traits.diff:implement_method_on(self, "diff", gen_array_diff_fn(self, value_type))
+	traits.value_name:implement_method_on(self, "value_name", function()
+		return ("ArrayValue<%s>"):format(traits.value_name:get(value_type).value_name())
+	end)
+	traits.freeze:implement_method_on(self, "freeze", array_freeze)
 	return self
 end
 define_array = U.memoize(define_array, false)
@@ -1532,12 +1518,12 @@ local function compare_trivial(left, right)
 	return left < right
 end
 for _, t in ipairs { terms_gen.builtin_number, terms_gen.builtin_string } do
-	traits.freeze:implement_on(t, { freeze = freeze_trivial })
-	traits.order:implement_on(t, { compare = compare_trivial })
+	traits.freeze:implement_method_on(t, "freeze", freeze_trivial)
+	traits.order:implement_method_on(t, "compare", compare_trivial)
 end
 -- lua tables are often used as unique ids
 for _, t in ipairs { terms_gen.builtin_table, terms_gen.any_lua_type } do
-	traits.freeze:implement_on(t, { freeze = freeze_trivial })
+	traits.freeze:implement_method_on(t, "freeze", freeze_trivial)
 end
 
 local function any_lua_type_diff_fn(left, right)

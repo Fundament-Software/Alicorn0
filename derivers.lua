@@ -464,7 +464,7 @@ local diff = {
 			end
 		end
 
-		traits.diff:implement_on(t, { diff = diff_fn })
+		traits.diff:implement_method_on(t, "diff", diff_fn)
 	end,
 	enum = function(t, info)
 		local name = info.name
@@ -551,7 +551,7 @@ local diff = {
 			variants_checks[left.kind](left, right)
 		end
 
-		traits.diff:implement_on(t, { diff = diff_fn })
+		traits.diff:implement_method_on(t, "diff", diff_fn)
 	end,
 }
 
@@ -567,14 +567,14 @@ local freeze = {
 			return val
 		end
 
-		traits.freeze:implement_on(t, { freeze = freeze_fn })
+		traits.freeze:implement_method_on(t, "freeze", freeze_fn)
 	end,
 	enum = function(t, info)
 		local function freeze_fn(t, val)
 			return val
 		end
 
-		traits.freeze:implement_on(t, { freeze = freeze_fn })
+		traits.freeze:implement_method_on(t, "freeze", freeze_fn)
 	end,
 }
 
@@ -584,9 +584,7 @@ local function trait_method(trait, method, build_record_function, specialization
 	specializations = specializations or {}
 	return {
 		record = function(t, info)
-			trait:implement_on(t, {
-				[method] = build_record_function(trait, t, info),
-			})
+			trait:implement_method_on(t, method, build_record_function(trait, t, info))
 		end,
 		enum = function(t, info)
 			local name = info.name
@@ -626,9 +624,7 @@ end]]
 			if not compiled then
 				error(message)
 			end
-			trait:implement_on(t, {
-				[method] = compiled(variant_impls),
-			})
+			trait:implement_method_on(t, method, compiled(variant_impls))
 		end,
 	}
 end
