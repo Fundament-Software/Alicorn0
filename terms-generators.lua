@@ -1154,7 +1154,7 @@ local function array_next(state, control)
 	if i > state.n then
 		return nil
 	else
-		return i, state[i]
+		return i, state.array[i]
 	end
 end
 

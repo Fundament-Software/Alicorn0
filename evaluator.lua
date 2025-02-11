@@ -523,13 +523,13 @@ TupleDescRelation = setmetatable({
 }, subtype_relation_mt)
 
 ---@generic T
----@param onto ArrayValue<T>
+---@param onto (T[]|ArrayValue<T>)
 ---@param with ArrayValue<T>
 local function add_arrays(onto, with)
-	local o_len = onto:len()
+	local onto_len = #onto
 	for i, n in ipairs(with) do
 		local x
-		if i > o_len then
+		if i > onto_len then
 			x = 0
 		else
 			x = onto[i]
