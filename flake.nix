@@ -9,6 +9,8 @@
     by-name.url = "github:bb010g/by-name.nix";
     by-name.inputs.nixpkgs-lib.follows = "nixpkgs";
     nixpkgs.url = "github:nixos/nixpkgs/nixos-24.11";
+    mobdebug.flake = false;
+    mobdebug.url = "github:bb010g/MobDebug/jj/bb010g/pprzovtsmqpk";
     pre-commit-hooks.url = "github:cachix/pre-commit-hooks.nix";
     pre-commit-hooks.inputs.nixpkgs.follows = "nixpkgs";
   };
@@ -35,6 +37,15 @@
         knownRockspec = "${src}/rockspecs/lua-quickcheck-${version}.rockspec";
 
         propagatedBuildInputs = [ luafilesystem argparse ];
+      };
+      mobdebug = { buildLuarocksPackage, dkjson, luasocket, ... }: buildLuarocksPackage {
+        pname = "mobdebug";
+        version = "0.80-5";
+
+        src = inputs.mobdebug;
+        rockspecFilename = "misc/mobdebug-scm-1.rockspec";
+
+        propagatedBuildInputs = [ dkjson luasocket ];
       };
       perSystem = { currentSystem, pkgs, pre-commit-hooks-lib, ... }: {
         checks = {
@@ -96,6 +107,7 @@
                   (ps.callPackage lqc { })
                   ps.luasocket
                   ps.luaunit
+                  (ps.callPackage mobdebug { })
                   ps.tl
                 ]))
               ];

@@ -26,6 +26,33 @@
             ]
         },
         {
+            "type": "luaMobDebug",
+            "name": "Debug (MobDebug b/w LuaJIT): runtest.lua",
+            "request": "launch",
+            "workingDirectory": "${workspaceFolder}",
+            "sourceBasePath": "${workspaceFolder}",
+            "listenPublicly": false,
+            "listenPort": 8818,
+            "sourceEncoding": "UTF-8",
+            "interpreter": "luajit",
+            "stopOnEntry": false,
+            "arguments": [
+                "-e",
+                "require('mobdebug').connecttimeout = 10; require('mobdebug').start('127.0.0.1', 8818, true)",
+                "runtest.lua"
+            ]
+        },
+        {
+            "type": "luaMobDebug",
+            "name": "Debug (MobDebug)",
+            "request": "attach",
+            "workingDirectory": "${workspaceFolder}",
+            "sourceBasePath": "${workspaceFolder}",
+            "listenPublicly": false,
+            "listenPort": 8818,
+            "sourceEncoding": "UTF-8"
+        },
+        {
             "type": "lua",
             "request": "attach",
             "name": "Luvit Attach (Windows)",

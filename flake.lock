@@ -57,6 +57,23 @@
         "type": "github"
       }
     },
+    "mobdebug": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1739255250,
+        "narHash": "sha256-ueRGGEkO7VERNcdyr+Wi73OCYWbRPAh3bY09vrYkpuI=",
+        "owner": "bb010g",
+        "repo": "MobDebug",
+        "rev": "76cd675fdf72faa3706c8ccfac5850d4264b00b1",
+        "type": "github"
+      },
+      "original": {
+        "owner": "bb010g",
+        "ref": "jj/bb010g/pprzovtsmqpk",
+        "repo": "MobDebug",
+        "type": "github"
+      }
+    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1737165118,
@@ -98,6 +115,7 @@
     "root": {
       "inputs": {
         "by-name": "by-name",
+        "mobdebug": "mobdebug",
         "nixpkgs": "nixpkgs",
         "pre-commit-hooks": "pre-commit-hooks"
       }

@@ -2,6 +2,18 @@
 -- SPDX-FileCopyrightText: 2025 Fundament Software SPC <https://fundament.software>
 local jit_enabled = true
 local lldebugger_enabled = os.getenv("LOCAL_LUA_DEBUGGER_VSCODE") == "1"
+do
+	local success, mobdebug = pcall(require, "mobdebug")
+	if success then
+		mobdebug.connecttimeout = 7
+		mobdebug.logging(true, "/home/bb010g/.cache/MobDebug/MobDebug.log")
+		if not mobdebug.start("127.0.0.1", 8818, true) then
+			return
+		end
+		mobdebug.connecttimeout = 2
+		print("MobDebug started!")
+	end
+end
 if lldebugger_enabled then
 	jit_enabled = false
 end
