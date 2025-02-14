@@ -12,7 +12,8 @@ SPDX-PackageDownloadLocation = "https://github.com/Fundament-Software/feathergui
 # Generated lock files.
 [[annotations]]
 path = [
-	"*.lock",
+	"**/Cargo.lock",
+	"**/flake.lock",
 ]
 precedence = "closest"
 SPDX-FileCopyrightText = "2025 Fundament Software SPC <https://fundament.software>"
