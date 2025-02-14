@@ -9,15 +9,17 @@ SPDX-PackageName = "Feather-UI"
 SPDX-PackageSupplier = "Fundament Software <https://fundament.software>"
 SPDX-PackageDownloadLocation = "https://github.com/Fundament-Software/feathergui"
 
-# Generated lock files.
+# Generated lock files, which are uncopyrightable. See:
+# * <https://web.archive.org/web/20250214112110/https://github.com/fsfe/reuse-tool/issues/390>
+# * <https://web.archive.org/web/20250106193945/https://reuse.software/faq/#uncopyrightable>
 [[annotations]]
 path = [
 	"**/Cargo.lock",
 	"**/flake.lock",
 ]
 precedence = "closest"
-SPDX-FileCopyrightText = "2025 Fundament Software SPC <https://fundament.software>"
-SPDX-License-Identifier = "Apache-2.0"
+SPDX-FileCopyrightText = "NONE"
+SPDX-License-Identifier = "0BSD"
 
 # Config files that we can't comment in.
 [[annotations]]
