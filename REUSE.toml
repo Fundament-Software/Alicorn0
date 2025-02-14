@@ -52,7 +52,6 @@ SPDX-License-Identifier = "Apache-2.0"
 # Source/data files that we don't want to comment in.
 [[annotations]]
 path = [
-	"test*.lua",
 	"tests/*.alc",
 ]
 precedence = "closest"
