@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2025 Fundament Software SPC <https://fundament.software>
 
 # FIXME: type of universe
 # we need to wrap this, and wrap takes a type in star-10
