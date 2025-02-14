@@ -134,13 +134,12 @@ local function gen_record(self, cons, kind, params_with_types)
 	local params, params_types = parse_params_with_types(params_with_types)
 	validate_params_types(kind, params, params_types)
 	local function build_record(...)
-		local args = table.pack(...)
 		local val = {
 			kind = kind,
 			_record = {},
 		}
 		for i, v in ipairs(params) do
-			local param = args[i]
+			local param = select(i, ...)
 			local param_type = params_types[i]
 			-- type-check constructor arguments
 			if param_type.value_check(param) ~= true then
@@ -176,10 +175,10 @@ local function gen_record(self, cons, kind, params_with_types)
 	local function build_record_freeze_wrapper(...)
 		local args = { ... }
 		for i, v in ipairs(params) do
-			local argi = args[i]
+			local arg = args[i]
 			local freeze_impl = traits.freeze:get(params_types[i])
 			if freeze_impl then
-				argi = freeze_impl.freeze(params_types[i], argi)
+				arg = freeze_impl.freeze(params_types[i], arg)
 			else
 				print(
 					"WARNING: while constructing "
@@ -192,11 +191,11 @@ local function gen_record(self, cons, kind, params_with_types)
 				)
 				print("this may lead to suboptimal hash-consing")
 			end
-			args[i] = argi
+			args[i] = arg
 		end
 		-- adjust args to correct number so memoize works even given too many args
 		-- (build_record won't error with too many args)
-		return build_record(table.unpack(args, 1, #params))
+		return build_record(table_unpack(args, 1, #params))
 	end
 	setmetatable(cons, {
 		__call = function(_, ...)
@@ -419,7 +418,7 @@ local function define_multi_enum(flex, flex_name, fn_replace, fn_specify, fn_uni
 	local flex_tags = {}
 
 	for _, v in ipairs(variants) do
-		local vname, vtag = table.unpack(split_delim(v[1], "$"))
+		local vname, vtag = table_unpack(split_delim(v[1], "$"))
 		local vparams_with_types = v[2]
 		if vtag == nil then
 			error("Missing tag on " .. vname)
@@ -458,7 +457,7 @@ local function define_multi_enum(flex, flex_name, fn_replace, fn_specify, fn_uni
 	flex:define_enum(flex_name, flex_variants)
 
 	local unify_passthrough = function(ok, ...)
-		return ok, table.unpack(fn_unify(table.pack(...)))
+		return ok, table_unpack(fn_unify(table.pack(...)))
 	end
 
 	for i, pair in ipairs(flex_variants) do
@@ -490,7 +489,7 @@ local function define_multi_enum(flex, flex_name, fn_replace, fn_specify, fn_uni
 				end
 				local tag, unified_args = fn_specify(args, params_types)
 				local subtype = types[tag]
-				local inner = subtype[k](table.unpack(unified_args))
+				local inner = subtype[k](table_unpack(unified_args))
 				return flex[tag](inner)
 			end
 		elseif flex_tags[k] ~= nil then
@@ -525,7 +524,7 @@ local function define_multi_enum(flex, flex_name, fn_replace, fn_specify, fn_uni
 				elseif v == "unwrap_" then
 					flex.methods[key] = function(self, ...)
 						local inner = unwrapper[self.kind](self)
-						return table.unpack(fn_unify(table.pack(inner[key](inner, ...))))
+						return table_unpack(fn_unify(table.pack(inner[key](inner, ...))))
 					end
 				elseif v == "as_" then
 					flex.methods[key] = function(self, ...)
@@ -627,9 +626,8 @@ local map_type_mt = {
 			is_frozen = false, -- bypass __newindex when setting is_frozen = true
 		}
 		setmetatable(val, self)
-		local args = table.pack(...)
-		for i = 1, args.n, 2 do
-			val:set(args[i], args[i + 1])
+		for i = 1, select("#", ...), 2 do
+			val:set(select(i, ...), select(i + 1, ...))
 		end
 		return val
 	end,
@@ -855,9 +853,8 @@ local set_type_mt = {
 			is_frozen = false,
 		}
 		setmetatable(val, self)
-		local args = table.pack(...)
-		for i = 1, args.n do
-			val:put(args[i])
+		for i = 1, select("#", ...) do
+			val:put(select(i, ...))
 		end
 		return val
 	end,

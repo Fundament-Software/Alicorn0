@@ -2476,14 +2476,15 @@ local function index_tuple_value(subject, index)
 end
 
 local host_tuple_make_prefix_mt = {
-	---@param i integer
+	---@param n integer
 	---@return flex_value
-	__call = function(self, i)
-		local prefix_elements = flex_value_array()
-		for x = 1, i do
-			prefix_elements:append(flex_value.stuck(stuck_value.tuple_element_access(self.subject_stuck_value, x)))
+	__call = function(self, n)
+		---@type flex_value[]
+		local prefix_elements = {}
+		for i = 1, n do
+			prefix_elements[i] = flex_value.stuck(stuck_value.tuple_element_access(self.subject_stuck_value, i))
 		end
-		return U.notail(flex_value.tuple_value(prefix_elements))
+		return U.notail(flex_value.tuple_value(flex_value_array:new(prefix_elements, n)))
 	end,
 }
 ---@param subject_stuck_value stuck_value
@@ -2510,14 +2511,15 @@ local function make_tuple_prefix(subject_type, subject_value)
 			end
 		elseif subject_value:is_stuck() then
 			local subject_stuck_value = subject_value:unwrap_stuck()
-			---@param i integer
+			---@param n integer
 			---@return flex_value
-			function make_prefix(i)
-				local prefix_elements = flex_value_array()
-				for x = 1, i do
-					prefix_elements:append(flex_value.stuck(stuck_value.tuple_element_access(subject_stuck_value, x)))
+			function make_prefix(n)
+				---@type flex_value[]
+				local prefix_elements = {}
+				for i = 1, n do
+					prefix_elements[i] = flex_value.stuck(stuck_value.tuple_element_access(subject_stuck_value, i))
 				end
-				return U.notail(flex_value.tuple_value(prefix_elements))
+				return U.notail(flex_value.tuple_value(flex_value_array:new(prefix_elements, n)))
 			end
 		else
 			error(
