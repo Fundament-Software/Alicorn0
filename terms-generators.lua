@@ -7,7 +7,7 @@ local U = require "alicorn-utils"
 
 local _ = require "lua-ext" -- has side-effect of loading fixed table.concat
 
-local math_floor, select, type = math.floor, select, type
+local math_floor, select, table_unpack, type = math.floor, select, table.unpack, type
 local s = pretty_printer.s
 
 -- record and enum are nominative types.
@@ -1041,6 +1041,7 @@ define_set = U.memoize(define_set, false)
 ---@overload fun(...): ArrayValue
 ---@field value_type Type
 ---@field methods { [string]: function }
+---@field new fun(ArrayType, array: Value[], n: integer?): ArrayValue
 ---@field __eq fun(ArrayValue, ArrayValue): boolean
 ---@field __index fun(self: ArrayValue, key: integer | string) : Value | function
 ---@field __newindex fun(self: ArrayValue, key: integer, value: Value)
@@ -1055,8 +1056,8 @@ define_set = U.memoize(define_set, false)
 ---@field ipairs fun(self: ArrayValue): function, ArrayValue, integer
 ---@field len fun(self: ArrayValue): integer
 ---@field append fun(self: ArrayValue, v: Value)
----@field copy fun(self: ArrayValue, integer?, integer?): ArrayValue
----@field map fun(self: ArrayValue, target: ArrayType, fn: fun(any) : any): ArrayValue
+---@field copy fun(self: ArrayValue, first: integer?, last: integer?): ArrayValue
+---@field map fun(self: ArrayValue, target: ArrayType, fn: (fun(any) : any), first: integer?, last: integer?): ArrayValue
 ---@field get fun(self: MapValue, key: Value): Value?
 ---@field unpack fun(self: ArrayValue): ...
 ---@field pretty_print fun(self: ArrayValue, ...)
@@ -1153,7 +1154,7 @@ end
 ---@return Value?
 local function array_next(state, control)
 	local i = control + 1
-	if i > state:len() then
+	if i > state.n then
 		return nil
 	else
 		return i, state[i]
@@ -1175,6 +1176,11 @@ local function gen_array_methods(self, value_type)
 			local n = val.n + 1
 			val.array[n], val.n = value, n
 		end,
+		---@generic T
+		---@param val ArrayValue<T>
+		---@param first? integer
+		---@param last? integer
+		---@return ArrayValue<T> new
 		copy = function(val, first, last)
 			first = first or 1
 			last = last or val.n
@@ -1184,8 +1190,8 @@ local function gen_array_methods(self, value_type)
 			end
 			return self:unchecked_new(new_array, n)
 		end,
-		unpack = function(val)
-			return table.unpack(val.array, 1, val.n)
+		unpack = function(val, first, last)
+			return table_unpack(val.array, first or 1, last or val.n)
 		end,
 		map = function(val, to, fn)
 			local value_type = to.value_type
