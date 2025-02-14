@@ -49,15 +49,6 @@ precedence = "closest"
 SPDX-FileCopyrightText = "2025 Fundament Software SPC <https://fundament.software>"
 SPDX-License-Identifier = "Apache-2.0"
 
-# Source/data files that we don't want to comment in.
-[[annotations]]
-path = [
-	"tests/*.alc",
-]
-precedence = "closest"
-SPDX-FileCopyrightText = "2025 Fundament Software SPC <https://fundament.software>"
-SPDX-License-Identifier = "Apache-2.0"
-
 # Generated source/data files that we don't want to comment in.
 [[annotations]]
 path = [

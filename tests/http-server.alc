@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2025 Fundament Software SPC <https://fundament.software>
+
 ####
 	#	---@alias URect userdata
 	let URect = new-host-type(new-host-unique-id("URect"))
