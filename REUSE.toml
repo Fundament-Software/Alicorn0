@@ -14,7 +14,7 @@ SPDX-PackageDownloadLocation = "https://github.com/Fundament-Software/feathergui
 path = [
 	"*.lock",
 ]
-precedence = "aggregate"
+precedence = "closest"
 SPDX-FileCopyrightText = "2025 Fundament Software SPC <https://fundament.software>"
 SPDX-License-Identifier = "Apache-2.0"
 
@@ -34,7 +34,7 @@ SPDX-License-Identifier = "Apache-2.0"
 path = [
 	"testlist.json",
 ]
-precedence = "aggregate"
+precedence = "closest"
 SPDX-FileCopyrightText = "2025 Fundament Software SPC <https://fundament.software>"
 SPDX-License-Identifier = "Apache-2.0"
 
@@ -45,7 +45,7 @@ path = [
 	"test*.lua",
 	"tests/*.alc",
 ]
-precedence = "aggregate"
+precedence = "closest"
 SPDX-FileCopyrightText = "2025 Fundament Software SPC <https://fundament.software>"
 SPDX-License-Identifier = "Apache-2.0"
 
@@ -54,19 +54,19 @@ SPDX-License-Identifier = "Apache-2.0"
 path = [
 	"types/*.lua",
 ]
-precedence = "aggregate"
+precedence = "closest"
 SPDX-FileCopyrightText = "2025 Fundament Software SPC <https://fundament.software>"
 SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
 path = "vendor/lpeg/**"
-precedence = "aggregate"
+precedence = "closest"
 SPDX-FileCopyrightText = "Copyright © 2007-2023 Lua.org, PUC-Rio."
 SPDX-License-Identifier = "MIT"
 
 [[annotations]]
 path = "vendor/luafilesystem/**"
-precedence = "aggregate"
+precedence = "closest"
 SPDX-FileCopyrightText = "Copyright © 2010-2022 The LuaFileSystem authors. Copyright © 2003-2010 Kepler Project."
 SPDX-License-Identifier = "MIT"
 
