@@ -1,3 +1,6 @@
+-- SPDX-License-Identifier: Apache-2.0
+-- SPDX-FileCopyrightText: 2025 Fundament Software SPC <https://fundament.software>
+
 local terms = require "terms"
 local evaluator = require "evaluator"
 local unanchored_inferrable_term = terms.unanchored_inferrable_term
