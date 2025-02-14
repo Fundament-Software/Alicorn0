@@ -35,17 +35,18 @@ SPDX-License-Identifier = "Apache-2.0"
 # Source/data files that we don't want to comment in.
 [[annotations]]
 path = [
-	"**/*.alc",
+	"*.alc",
 	"test*.lua",
+	"tests/*.alc",
 ]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2025 Fundament Software SPC <https://fundament.software>"
 SPDX-License-Identifier = "Apache-2.0"
 
-# Generated source/data files that we can't or don't want to comment in.
+# Generated source/data files that we don't want to comment in.
 [[annotations]]
 path = [
-	"types/**",
+	"types/*.lua",
 ]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2025 Fundament Software SPC <https://fundament.software>"
