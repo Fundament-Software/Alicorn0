@@ -216,6 +216,12 @@ local function record_tostring(self)
 	return "terms-gen record: " .. self._kind
 end
 
+---@param self RecordType
+---@return string
+local function record_value_name_fn(self)
+	return self._kind
+end
+
 ---@param self table
 ---@param kind string
 ---@param params_with_types ParamsWithTypes
@@ -255,9 +261,7 @@ local function define_record(self, kind, params_with_types)
 	self.__newindex = function()
 		error("records are immutable!")
 	end
-	traits.value_name:implement_method_on(self, "value_name", function()
-		return kind
-	end)
+	traits.value_name:implement_method_on(self, "value_name", record_value_name_fn)
 	self:derive(derivers.eq)
 	self:derive(derivers.unwrap)
 	self:derive(derivers.diff)
@@ -300,6 +304,12 @@ local enum_type_mt = {
 }
 
 ---@alias Variants [ string, ParamsWithTypes ][]
+
+---@param self EnumType
+---@return string
+local function enum_value_name_fn(self)
+	return self._name
+end
 
 ---@param self table
 ---@param name string
@@ -368,9 +378,7 @@ local function define_enum(self, name, variants)
 	self.__newindex = function()
 		error("enums are immutable!")
 	end
-	traits.value_name:implement_method_on(self, "value_name", function()
-		return name
-	end)
+	traits.value_name:implement_method_on(self, "value_name", enum_value_name_fn)
 	self:derive(derivers.eq)
 	self:derive(derivers.is)
 	self:derive(derivers.unwrap)
@@ -578,6 +586,12 @@ local foreign_type_mt = {
 	end,
 }
 
+---@param self ForeignType
+---@return string
+local function foreign_value_name_fn(self)
+		return self.lsp_type
+end
+
 ---@param self table
 ---@param value_check ValueCheckFn
 ---@param lsp_type string
@@ -587,9 +601,7 @@ local function define_foreign(self, value_check, lsp_type)
 	---@cast self ForeignType
 	self.value_check = value_check
 	self.lsp_type = lsp_type
-	traits.value_name:implement_method_on(self, "value_name", function()
-		return lsp_type
-	end)
+	traits.value_name:implement_method_on(self, "value_name", foreign_value_name_fn)
 	return self
 end
 
@@ -779,6 +791,16 @@ local function map_freeze(t, val)
 	return frozen
 end
 
+---@param self MapType
+---@return string
+local function map_value_name_fn(self)
+	local key_type, value_type = self.key_type, self.value_type
+	return ("MapValue<%s, %s>"):format(
+		traits.value_name:get(key_type).value_name(key_type),
+		traits.value_name:get(value_type).value_name(value_type)
+	)
+end
+
 ---@param self table
 ---@param key_type Type
 ---@param value_type Type
@@ -807,13 +829,8 @@ local function define_map(self, key_type, value_type)
 		pretty_print = map_pretty_print,
 		default_print = map_pretty_print,
 	})
-	traits.value_name:implement_method_on(self, "value_name", function()
-		return ("MapValue<%s, %s>"):format(
-			traits.value_name:get(key_type).value_name(),
-			traits.value_name:get(value_type).value_name()
-		)
-	end)
 	traits.freeze:implement_method_on(self, "freeze", map_freeze)
+	traits.value_name:implement_method_on(self, "value_name", map_value_name_fn)
 	return self
 end
 define_map = U.memoize(define_map, false)
@@ -998,6 +1015,13 @@ local function set_freeze(t, val)
 	return frozen
 end
 
+---@param self SetType
+---@return string
+local function set_value_name_fn(self)
+	local key_type = self.key_type
+	return ("SetValue<%s>"):format(traits.value_name:get(key_type).value_name(key_type))
+end
+
 ---@param self table
 ---@param key_type Type
 ---@return SetType self
@@ -1018,9 +1042,7 @@ local function define_set(self, key_type)
 		pretty_print = set_pretty_print,
 		default_print = set_pretty_print,
 	})
-	traits.value_name:implement_method_on(self, "value_name", function()
-		return ("SetValue<%s>"):format(traits.value_name:get(key_type).value_name())
-	end)
+	traits.value_name:implement_method_on(self, "value_name", set_value_name_fn)
 	traits.freeze:implement_method_on(self, "freeze", set_freeze)
 	return self
 end
@@ -1400,6 +1422,13 @@ local function array_freeze(t, val)
 	return frozen
 end
 
+---@param self ArrayType
+---@return string
+local function array_value_name_fn(self)
+	local value_type = self.value_type
+	return ("ArrayValue<%s>"):format(traits.value_name:get(value_type).value_name(value_type))
+end
+
 ---@param self table
 ---@param value_type Type
 ---@return ArrayType
@@ -1429,9 +1458,7 @@ local function define_array(self, value_type)
 		default_print = array_pretty_print,
 	})
 	traits.diff:implement_method_on(self, "diff", gen_array_diff_fn(self, value_type))
-	traits.value_name:implement_method_on(self, "value_name", function()
-		return ("ArrayValue<%s>"):format(traits.value_name:get(value_type).value_name())
-	end)
+	traits.value_name:implement_method_on(self, "value_name", array_value_name_fn)
 	traits.freeze:implement_method_on(self, "freeze", array_freeze)
 	return self
 end

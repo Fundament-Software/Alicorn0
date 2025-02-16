@@ -94,7 +94,7 @@ local function build_meta_file_for_record(info)
 	local unwraptypes = {}
 	for i, param in ipairs(params) do
 		local param_type = params_types[i]
-		local ptype = traits.value_name:get(param_type).value_name()
+		local ptype = traits.value_name:get(param_type).value_name(param_type)
 		params_ascribed[#params_ascribed + 1] = param .. ": " .. ptype
 		unwraptypes[#unwraptypes + 1] = ptype
 	end
@@ -143,7 +143,7 @@ local function build_meta_file_for_enum(info)
 		if vtype == derivers.EnumDeriveInfoVariantKind.Record then
 			for i, param in ipairs(vinfo.params) do
 				local param_type = vinfo.params_types[i]
-				local ptype = traits.value_name:get(param_type).value_name()
+				local ptype = traits.value_name:get(param_type).value_name(param_type)
 				params_ascribed[#params_ascribed + 1] = param .. ": " .. ptype
 				unwraptypes[#unwraptypes + 1] = ptype .. " " .. param
 				astypes[#astypes + 1] = ptype .. " " .. param

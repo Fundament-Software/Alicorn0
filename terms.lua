@@ -1649,6 +1649,9 @@ gen.define_multi_enum(
 -- host user defined ids are unique (identified by identity, not by name)
 -- subtype relations are unique (all instances are either individual
 -- or constructed from FunctionRelation, which is already memoized)
+local function freeze_no_op_fn(_, val)
+	return val
+end
 for _, t in ipairs {
 	metavariable_type,
 	anchor_type,
@@ -1658,9 +1661,7 @@ for _, t in ipairs {
 	host_user_defined_id,
 	SubtypeRelation,
 } do
-	traits.freeze:implement_method_on(t, "freeze", function(_, val)
-		return val
-	end)
+	traits.freeze:implement_method_on(t, "freeze", freeze_no_op_fn)
 end
 
 local host_syntax_type = strict_value.host_user_defined_type({ name = "syntax" }, array(strict_value)())
