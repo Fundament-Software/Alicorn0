@@ -7,7 +7,7 @@ local U = require "alicorn-utils"
 
 local _ = require "lua-ext" -- has side-effect of loading fixed table.concat
 
-local math_floor, select, type = math.floor, select, type
+local math_floor, select, table_unpack, type = math.floor, select, table.unpack, type
 local s = pretty_printer.s
 
 -- record and enum are nominative types.
@@ -134,13 +134,12 @@ local function gen_record(self, cons, kind, params_with_types)
 	local params, params_types = parse_params_with_types(params_with_types)
 	validate_params_types(kind, params, params_types)
 	local function build_record(...)
-		local args = table.pack(...)
 		local val = {
 			kind = kind,
 			_record = {},
 		}
 		for i, v in ipairs(params) do
-			local param = args[i]
+			local param = select(i, ...)
 			local param_type = params_types[i]
 			-- type-check constructor arguments
 			if param_type.value_check(param) ~= true then
@@ -176,10 +175,10 @@ local function gen_record(self, cons, kind, params_with_types)
 	local function build_record_freeze_wrapper(...)
 		local args = { ... }
 		for i, v in ipairs(params) do
-			local argi = args[i]
+			local arg = args[i]
 			local freeze_impl = traits.freeze:get(params_types[i])
 			if freeze_impl then
-				argi = freeze_impl.freeze(params_types[i], argi)
+				arg = freeze_impl.freeze(params_types[i], arg)
 			else
 				print(
 					"WARNING: while constructing "
@@ -192,11 +191,11 @@ local function gen_record(self, cons, kind, params_with_types)
 				)
 				print("this may lead to suboptimal hash-consing")
 			end
-			args[i] = argi
+			args[i] = arg
 		end
 		-- adjust args to correct number so memoize works even given too many args
 		-- (build_record won't error with too many args)
-		return build_record(table.unpack(args, 1, #params))
+		return build_record(table_unpack(args, 1, #params))
 	end
 	setmetatable(cons, {
 		__call = function(_, ...)
@@ -419,7 +418,7 @@ local function define_multi_enum(flex, flex_name, fn_replace, fn_specify, fn_uni
 	local flex_tags = {}
 
 	for _, v in ipairs(variants) do
-		local vname, vtag = table.unpack(split_delim(v[1], "$"))
+		local vname, vtag = table_unpack(split_delim(v[1], "$"))
 		local vparams_with_types = v[2]
 		if vtag == nil then
 			error("Missing tag on " .. vname)
@@ -458,7 +457,7 @@ local function define_multi_enum(flex, flex_name, fn_replace, fn_specify, fn_uni
 	flex:define_enum(flex_name, flex_variants)
 
 	local unify_passthrough = function(ok, ...)
-		return ok, table.unpack(fn_unify(table.pack(...)))
+		return ok, table_unpack(fn_unify(table.pack(...)))
 	end
 
 	for i, pair in ipairs(flex_variants) do
@@ -490,7 +489,7 @@ local function define_multi_enum(flex, flex_name, fn_replace, fn_specify, fn_uni
 				end
 				local tag, unified_args = fn_specify(args, params_types)
 				local subtype = types[tag]
-				local inner = subtype[k](table.unpack(unified_args))
+				local inner = subtype[k](table_unpack(unified_args))
 				return flex[tag](inner)
 			end
 		elseif flex_tags[k] ~= nil then
@@ -525,7 +524,7 @@ local function define_multi_enum(flex, flex_name, fn_replace, fn_specify, fn_uni
 				elseif v == "unwrap_" then
 					flex.methods[key] = function(self, ...)
 						local inner = unwrapper[self.kind](self)
-						return table.unpack(fn_unify(table.pack(inner[key](inner, ...))))
+						return table_unpack(fn_unify(table.pack(inner[key](inner, ...))))
 					end
 				elseif v == "as_" then
 					flex.methods[key] = function(self, ...)
@@ -627,9 +626,8 @@ local map_type_mt = {
 			is_frozen = false, -- bypass __newindex when setting is_frozen = true
 		}
 		setmetatable(val, self)
-		local args = table.pack(...)
-		for i = 1, args.n, 2 do
-			val:set(args[i], args[i + 1])
+		for i = 1, select("#", ...), 2 do
+			val:set(select(i, ...), select(i + 1, ...))
 		end
 		return val
 	end,
@@ -862,9 +860,8 @@ local set_type_mt = {
 			is_frozen = false,
 		}
 		setmetatable(val, self)
-		local args = table.pack(...)
-		for i = 1, args.n do
-			val:put(args[i])
+		for i = 1, select("#", ...) do
+			val:put(select(i, ...))
 		end
 		return val
 	end,
@@ -1055,6 +1052,7 @@ declare_set = U.memoize(declare_set, false)
 ---@overload fun(...): ArrayValue
 ---@field value_type Type
 ---@field methods { [string]: function }
+---@field new fun(ArrayType, array: Value[], n: integer?): ArrayValue
 ---@field __eq fun(ArrayValue, ArrayValue): boolean
 ---@field __index fun(self: ArrayValue, key: integer | string) : Value | function
 ---@field __newindex fun(self: ArrayValue, key: integer, value: Value)
@@ -1069,8 +1067,8 @@ declare_set = U.memoize(declare_set, false)
 ---@field ipairs fun(self: ArrayValue): function, ArrayValue, integer
 ---@field len fun(self: ArrayValue): integer
 ---@field append fun(self: ArrayValue, v: Value)
----@field copy fun(self: ArrayValue, integer?, integer?): ArrayValue
----@field map fun(self: ArrayValue, target: ArrayType, fn: fun(any) : any): ArrayValue
+---@field copy fun(self: ArrayValue, first: integer?, last: integer?): ArrayValue
+---@field map fun(self: ArrayValue, target: ArrayType, fn: (fun(any) : any), first: integer?, last: integer?): ArrayValue
 ---@field get fun(self: MapValue, key: Value): Value?
 ---@field unpack fun(self: ArrayValue): ...
 ---@field pretty_print fun(self: ArrayValue, ...)
@@ -1167,10 +1165,10 @@ end
 ---@return Value?
 local function array_next(state, control)
 	local i = control + 1
-	if i > state:len() then
+	if i > state.n then
 		return nil
 	else
-		return i, state[i]
+		return i, state.array[i]
 	end
 end
 
@@ -1189,6 +1187,11 @@ local function gen_array_methods(self, value_type)
 			local n = val.n + 1
 			val.array[n], val.n = value, n
 		end,
+		---@generic T
+		---@param val ArrayValue<T>
+		---@param first? integer
+		---@param last? integer
+		---@return ArrayValue<T> new
 		copy = function(val, first, last)
 			first = first or 1
 			last = last or val.n
@@ -1198,8 +1201,8 @@ local function gen_array_methods(self, value_type)
 			end
 			return self:unchecked_new(new_array, n)
 		end,
-		unpack = function(val)
-			return table.unpack(val.array, 1, val.n)
+		unpack = function(val, first, last)
+			return table_unpack(val.array, first or 1, last or val.n)
 		end,
 		map = function(val, to, fn)
 			local value_type = to.value_type

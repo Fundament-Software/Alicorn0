@@ -953,7 +953,7 @@ let host-array-from-tuple = lambda_implicit (T : host-type)
 				""""
 					return function(tuple)
 						local elements = tuple:unwrap_host_tuple_value(tuple)
-						return {elements:unpack()}
+						return elements:copy().array
 					end
 				:
 				host-func-type ((tuple : wrapped(host-tuple-type(duplicate-tuple-desc(size, T))))) -> ((res : host-array-type(T)))
@@ -970,7 +970,7 @@ let make-host-array = lambda_implicit (T : host-type)
 				""""
 					return function(tuple)
 						local elements = tuple:unwrap_host_tuple_value(tuple)
-						return {elements:unpack()}
+						return elements:copy().array
 					end
 				:
 				host-func-type ((tuple : wrapped(host-input-type))) -> ((res : host-array-type(T)))
