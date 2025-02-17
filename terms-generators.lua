@@ -37,8 +37,9 @@ local s = pretty_printer.s
 local function metatable_equality(mt)
 	if type(mt) ~= "table" then
 		error(
-			"trying to define metatable equality to something that isn't a metatable (possible typo?): "
-				.. debug.traceback(tostring(mt))
+			("trying to define metatable equality to something that isn't a metatable (possible typo?): %s"):format(
+				debug.traceback(tostring(mt))
+			)
 		)
 	end
 	return function(val)
@@ -85,23 +86,20 @@ local function validate_params_types(kind, params, params_types)
 		if type(param_type) ~= "table" or type(param_type.value_check) ~= "function" then
 			error(
 				debug.traceback(
-					"trying to set a parameter type to something that isn't a type, in constructor "
-						.. kind
-						.. ", parameter "
-						.. v
-						.. " (possible typo?)"
+					("trying to set a parameter type to something that isn't a type, in constructor %s, parameter %q (possible typo?)"):format(
+						kind,
+						v
+					)
 				)
 			)
 		end
 		if params_set[v] then
-			error(
-				"constructor " .. kind .. " must have unique parameter names ('" .. v .. "' was given more than once)"
-			)
+			error(("constructor %s must have unique parameter names (%q was given more than once)"):format(kind, v))
 		end
 		params_set[v] = true
 	end
 	if not at_least_one then
-		error("constructor " .. kind .. " must take at least one parameter, or be changed to a unit")
+		error(("constructor %s must take at least one parameter, or be changed to a unit"):format(kind))
 	end
 end
 
@@ -138,8 +136,7 @@ local function gen_record(self, cons, kind, params_with_types)
 			if param_type.value_check(param) ~= true then
 				error(
 					debug.traceback(
-						string.format(
-							"wrong argument type passed to constructor %s, parameter %q\nexpected type of parameter %q is: %s\nvalue of parameter %q: (follows)\n%s",
+						("wrong argument type passed to constructor %s, parameter %q\nexpected type of parameter %q is: %s\nvalue of parameter %q: (follows)\n%s"):format(
 							kind,
 							v,
 							v,
@@ -174,13 +171,11 @@ local function gen_record(self, cons, kind, params_with_types)
 				argi = freeze_impl.freeze(params_types[i], argi)
 			else
 				print(
-					"WARNING: while constructing "
-						.. kind
-						.. ", can't freeze param "
-						.. v
-						.. " (type "
-						.. tostring(params_types[i])
-						.. ")"
+					("WARNING: while constructing %s, can't freeze param %s (type %s)"):format(
+						kind,
+						v,
+						tostring(params_types[i])
+					)
 				)
 				print("this may lead to suboptimal hash-consing")
 			end
@@ -205,7 +200,7 @@ local function gen_record(self, cons, kind, params_with_types)
 end
 
 local function record_tostring(self)
-	return "terms-gen record: " .. self._kind
+	return ("terms-gen record: %s"):format(self._kind)
 end
 
 ---@param self table
@@ -231,13 +226,13 @@ local function define_record(self, kind, params_with_types)
 			return t._record[key]
 		end
 		if key ~= "name" then
-			error(debug.traceback("use unwrap instead for: " .. key))
+			error(debug.traceback(("use unwrap instead for: %s"):format(key)))
 		end
 		if t._record[key] then
 			return t._record[key]
 		end
 
-		error("Tried to access nonexistent key: " .. key)
+		error(("Tried to access nonexistent key: %s"):format(key))
 	end
 	self.methods = {
 		pretty_preprint = pretty_printer.pretty_preprint,
@@ -296,7 +291,7 @@ end
 
 local enum_type_mt = {
 	__tostring = function(self)
-		return "terms-gen enum: " .. self._name
+		return ("terms-gen enum: %s"):format(self._name)
 	end,
 }
 
@@ -311,12 +306,13 @@ local function define_enum(self, name, variants)
 	---@cast self EnumType
 	self.value_check = metatable_equality(self)
 	local derive_variants = {}
+	local name_dot = name .. "."
 	for i, v in ipairs(variants) do
 		local vname = v[1]
 		local vparams_with_types = v[2]
-		local vkind = name .. "." .. vname
+		local vkind = name_dot .. vname
 		if self[vname] then
-			error("enum variant " .. vkind .. " is defined multiple times")
+			error(("enum variant %s is defined multiple times"):format(vkind))
 		end
 		derive_variants[i] = vname
 		if vparams_with_types then
@@ -354,12 +350,12 @@ local function define_enum(self, name, variants)
 		if key == "{TRACE}" or key == "{ID}" then
 			return t._record[key]
 		end
-		error(debug.traceback("use unwrap instead for: " .. key))
+		error(debug.traceback(("use unwrap instead for: %s"):format(key)))
 		if t._record[key] then
 			return t._record[key]
 		end
 
-		error("Tried to access nonexistent key: " .. key)
+		error(("Tried to access nonexistent key: "):format(key))
 	end
 	self.methods = {
 		pretty_preprint = pretty_printer.pretty_preprint,
@@ -396,7 +392,7 @@ end
 local function split_delim(s, delim)
 	local subs = {}
 	-- This might have an extra blank match at the end but we actually don't care in this case
-	for sub in s:gmatch("[^" .. delim .. "]+") do
+	for sub in s:gmatch(("[^%s]+"):format(delim)) do
 		table.insert(subs, sub)
 	end
 	return subs
@@ -428,7 +424,7 @@ local function define_multi_enum(flex, flex_name, fn_replace, fn_specify, fn_uni
 		local vname, vtag = table.unpack(split_delim(v[1], "$"))
 		local vparams_with_types = v[2]
 		if vtag == nil then
-			error("Missing tag on " .. vname)
+			error(("Missing tag on "):format(vname))
 		end
 		table.insert(flex_variants, { vname, vparams_with_types })
 		flex_tags[vname] = vtag
@@ -447,7 +443,7 @@ local function define_multi_enum(flex, flex_name, fn_replace, fn_specify, fn_uni
 			end
 		else
 			if keyed_variants[vtag] == nil then
-				error("Unknown tag: " .. vtag)
+				error(("Unknown tag: %s"):format(vtag))
 			end
 			table.insert(keyed_variants[vtag], { vname, vparams_with_types })
 		end
@@ -467,10 +463,11 @@ local function define_multi_enum(flex, flex_name, fn_replace, fn_specify, fn_uni
 		return ok, table.unpack(fn_unify(table.pack(...)))
 	end
 
+	local flex_name_dot = flex_name .. "."
 	for i, pair in ipairs(flex_variants) do
 		local k = pair[1]
 		if flex_tags[k] == "flex" then
-			local vkind = flex_name .. "." .. k
+			local vkind = flex_name_dot .. k
 			local params, params_types = parse_params_with_types(pair[2])
 			validate_params_types(vkind, params, params_types)
 			flex[k] = function(...)
@@ -481,8 +478,7 @@ local function define_multi_enum(flex, flex_name, fn_replace, fn_specify, fn_uni
 					if param_type.value_check(param) ~= true then
 						error(
 							debug.traceback(
-								string.format(
-									"wrong argument type passed to constructor %s, parameter %q\nexpected type of parameter %q is: %s\nvalue of parameter %q: (follows)\n%s",
+								("wrong argument type passed to constructor %s, parameter %q\nexpected type of parameter %q is: %s\nvalue of parameter %q: (follows)\n%s"):format(
 									param.kind,
 									v,
 									v,
@@ -519,7 +515,7 @@ local function define_multi_enum(flex, flex_name, fn_replace, fn_specify, fn_uni
 
 			local unwrapper = {}
 			for _, k, v in U.table_stable_pairs(types) do
-				unwrapper[flex_name .. "." .. k] = flex.methods["unwrap_" .. k]
+				unwrapper[flex_name_dot .. k] = flex.methods["unwrap_" .. k]
 			end
 
 			if tag == "flex" then
@@ -564,7 +560,7 @@ local function define_multi_enum(flex, flex_name, fn_replace, fn_specify, fn_uni
 
 	--[[local lookup = {}
 	for _, k, v in U.table_stable_pairs(types) do
-		lookup[flex_name .. "." .. k] = k
+		lookup[flex_name_dot .. k] = k
 	end
 
 	for _, k in ipairs(forward) do
@@ -584,7 +580,7 @@ end
 
 local foreign_type_mt = {
 	__tostring = function(self)
-		return "terms-gen foreign: " .. self.lsp_type
+		return ("terms-gen foreign: %s"):format(self.lsp_type)
 	end,
 }
 
@@ -651,7 +647,7 @@ local map_type_mt = {
 		return left.key_type == right.key_type and left.value_type == right.value_type
 	end,
 	__tostring = function(self)
-		return "terms-gen map key:<" .. tostring(self.key_type) .. "> val:<" .. tostring(self.value_type) .. ">"
+		return ("terms-gen map key:<%s> val:<%s>"):format(tostring(self.key_type), tostring(self.value_type))
 	end,
 }
 
@@ -676,11 +672,7 @@ local function gen_map_methods(self, key_type, value_type)
 				key = freeze_impl_key.freeze(key_type, key)
 			else
 				print(
-					"WARNING: while setting "
-						.. tostring(self)
-						.. ", can't freeze key (type "
-						.. tostring(key_type)
-						.. ")"
+					("WARNING: while setting %s, can't freeze key (type %s)"):format(tostring(self), tostring(key_type))
 				)
 				print("this may lead to suboptimal hash-consing")
 			end
@@ -689,11 +681,10 @@ local function gen_map_methods(self, key_type, value_type)
 				value = freeze_impl_value.freeze(value_type, value)
 			else
 				print(
-					"WARNING: while setting "
-						.. tostring(self)
-						.. ", can't freeze value (type "
-						.. tostring(value_type)
-						.. ")"
+					("WARNING: while setting %s, can't freeze value (type %s)"):format(
+						tostring(self),
+						tostring(value_type)
+					)
 				)
 				print("this may lead to suboptimal hash-consing")
 			end
@@ -787,7 +778,7 @@ local function map_freeze(t, val)
 	end
 	local order_impl = traits.order:get(t.key_type)
 	if not order_impl then
-		print("WARNING: can't freeze " .. tostring(t))
+		print(("WARNING: can't freeze %s"):format(tostring(t)))
 		return val
 	end
 	local keys = {}
@@ -886,7 +877,7 @@ local set_type_mt = {
 		return left.key_type == right.key_type
 	end,
 	__tostring = function(self)
-		return "terms-gen set key:<" .. tostring(self.key_type) .. ">"
+		return ("terms-gen set key:<%s>"):format(tostring(self.key_type))
 	end,
 }
 
@@ -906,11 +897,7 @@ local function gen_set_methods(self, key_type)
 				key = freeze_impl_key.freeze(key_type, key)
 			else
 				print(
-					"WARNING: while putting "
-						.. tostring(self)
-						.. ", can't freeze key (type "
-						.. tostring(key_type)
-						.. ")"
+					("WARNING: while putting %s, can't freeze key (type %s)"):format(tostring(self), tostring(key_type))
 				)
 				print("this may lead to suboptimal hash-consing")
 			end
@@ -1016,7 +1003,7 @@ local function set_freeze(t, val)
 	end
 	local order_impl = traits.order:get(t.key_type)
 	if not order_impl then
-		print("WARNING: can't freeze " .. tostring(t))
+		print(("WARNING: can't freeze "):format(tostring(t)))
 		return val
 	end
 	local keys = {}
@@ -1099,8 +1086,7 @@ local array_type_mt = {
 			if value_type.value_check(value) ~= true then
 				error(
 					debug.traceback(
-						string.format(
-							"wrong value type passed to array creation: expected [%s] of type %s but got %s",
+						("wrong value type passed to array creation: expected [%s] of type %s but got %s"):format(
 							s(i),
 							s(value_type),
 							s(value)
@@ -1120,7 +1106,7 @@ local array_type_mt = {
 		return left.value_type == right.value_type
 	end,
 	__tostring = function(self)
-		return "terms-gen array val:<" .. tostring(self.value_type) .. ">"
+		return ("terms-gen array val:<%s>"):format(tostring(self.value_type))
 	end,
 }
 
@@ -1157,8 +1143,7 @@ local function array_new_fn(self, array, n)
 		if value_type.value_check(value) ~= true then
 			error(
 				debug.traceback(
-					string.format(
-						"wrong value type passed to array creation: expected [%s] of type %s but got %s",
+					("wrong value type passed to array creation: expected [%s] of type %s but got %s"):format(
 						s(i),
 						s(value_type),
 						s(value)
@@ -1223,8 +1208,7 @@ local function gen_array_methods(self, value_type)
 				if value_type.value_check(value) ~= true then
 					error(
 						debug.traceback(
-							string.format(
-								"wrong value type resulting from array mapping: expected [%s] of type %s but got %s",
+							("wrong value type resulting from array mapping: expected [%s] of type %s but got %s"):format(
 								s(i),
 								s(value_type),
 								s(value)
@@ -1297,11 +1281,10 @@ local function gen_array_index_fns(self, value_type)
 		if key < 1 or key > val.n then
 			p(key, val.n)
 			error(
-				"key passed to array indexing is out of bounds (read code comment above): "
-					.. tostring(key)
-					.. " is not within [1,"
-					.. tostring(val.n)
-					.. "]"
+				("key passed to array indexing is out of bounds (read code comment above): %s is not within [1,%s]"):format(
+					tostring(key),
+					tostring(val.n)
+				)
 			)
 		end
 		return val.array[key]
@@ -1311,29 +1294,27 @@ local function gen_array_index_fns(self, value_type)
 	---@param value Value
 	local function newindex(val, key, value)
 		if val.is_frozen then
-			error(string.format("trying to set %s on a frozen array to %s: %s", s(key), s(value), s(val)))
+			error(("trying to set %s on a frozen array to %s: %s"):format(s(key), s(value), s(val)))
 		end
 		if type(key) ~= "number" then
 			error(
-				string.format(
-					"wrong key type passed to array index-assignment: expected %s but got %s",
+				("wrong key type passed to array index-assignment: expected %s but got %s"):format(
 					s(value_type),
 					s(key)
 				)
 			)
 		end
 		if math_floor(key) ~= key then
-			error(string.format("key passed to array index-assignment is not an integer: %s", s(key)))
+			error(("key passed to array index-assignment is not an integer: %s"):format(s(key)))
 		end
 		-- n+1 can be used to append
 		if key < 1 or key > val.n + 1 then
-			error(string.format("key %s passed to array index-assignment is out of bounds: %s", s(key), s(val.n)))
+			error(("key %s passed to array index-assignment is out of bounds: %s"):format(s(key), s(val.n)))
 		end
 		if value_type.value_check(value) ~= true then
 			error(
 				debug.traceback(
-					string.format(
-						"wrong value type passed to array index-assignment: expected [%s] of type %s but got %s",
+					("wrong value type passed to array index-assignment: expected [%s] of type %s but got %s"):format(
 						s(key),
 						s(value_type),
 						s(value)
@@ -1346,13 +1327,11 @@ local function gen_array_index_fns(self, value_type)
 			value = freeze_impl_value.freeze(value_type, value)
 		else
 			print(
-				"WARNING: while setting "
-					.. tostring(self)
-					.. ", can't freeze value (type "
-					.. tostring(value_type)
-					.. ")"
+				("WARNING: while setting %s, can't freeze value (type %s)\nthis may lead to suboptimal hash-consing"):format(
+					tostring(self),
+					tostring(value_type)
+				)
 			)
-			print("this may lead to suboptimal hash-consing")
 		end
 		val.array[key] = value
 		if key > val.n then
@@ -1368,7 +1347,7 @@ end
 
 local function gen_array_diff_fn(self, value_type)
 	local function diff_fn(left, right)
-		print("diffing array with value_type: " .. tostring(value_type))
+		print(("diffing array with value_type: %s"):format(tostring(value_type)))
 		local rt = getmetatable(right)
 		if self ~= rt then
 			print("unequal types!")
@@ -1398,7 +1377,7 @@ local function gen_array_diff_fn(self, value_type)
 			return
 		elseif n == 1 then
 			local d = diff_elems[1]
-			print("difference in element: " .. tostring(d))
+			print(("difference in element: %s"):format(tostring(d)))
 			local diff_impl = traits.diff:get(value_type)
 			if diff_impl then
 				-- tail call
@@ -1445,8 +1424,9 @@ end
 local function define_array(self, value_type)
 	if type(value_type) ~= "table" or type(value_type.value_check) ~= "function" then
 		error(
-			"trying to set the value type to something that isn't a type (possible typo?): "
-				.. debug.traceback(tostring(value_type))
+			("trying to set the value type to something that isn't a type (possible typo?): %s"):format(
+				debug.traceback(tostring(value_type))
+			)
 		)
 	end
 
@@ -1663,7 +1643,7 @@ local function any_lua_type_diff_fn(left, right)
 				return
 			elseif n == 1 then
 				local d = diff_elems[1]
-				print("difference in element: " .. tostring(d))
+				print(("difference in element: %s"):format(tostring(d)))
 				local mtl = getmetatable(left[d])
 				local mtr = getmetatable(right[d])
 				if mtl ~= mtr then
