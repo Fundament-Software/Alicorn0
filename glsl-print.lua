@@ -1,13 +1,16 @@
 local internals_interface = require "internals-interface"
 internals_interface.glsl_registry = {}
-internals_interface.glsl_print = glsl_print
 
 local traits = require "traits"
 
-local function glsl_fallback(unknown, pp)
+local function glsl_print_fallback(unknown, pp)
 	pp:unit("/* wtf is this: ")
 	pp:unit(tostring(unknown))
 	pp:unit("*/")
+end
+
+local function glsl_check_fail()
+	return false
 end
 
 local glsl_print_deriver = {
@@ -19,50 +22,71 @@ local glsl_print_deriver = {
 		local variants = info.variants
 
 		local variant_glsl_printers = {}
+		local variant_glsl_checkers = {}
 		for _, vname in ipairs(variants) do
 			local vkind = name .. "." .. vname
-			variant_glsl_printers[vkind] = glsl_variants[vname] or glsl_fallback
+			local glsl_variant = glsl_variants[vname]
+			if glsl_variant then
+				variant_glsl_printers[vkind] = glsl_variant.print
+				variant_glsl_checkers[vkind] = glsl_variant.check
+			else
+				variant_glsl_printers[vkind] = glsl_print_fallback
+				variant_glsl_checkers[vkind] = glsl_check_fail
+			end
 		end
 
 		local function glsl_print(self, pp, ...)
 			return variant_glsl_printers[self.kind](self, pp, ...)
 		end
 
-		traits.glsl_print:implement_on(t, { glsl_print = glsl_print })
+		local function glsl_check(self, check, ...)
+			return variant_glsl_checkers[self.kind](self, check, ...)
+		end
+
+		traits.glsl_print:implement_on(t, { glsl_print = glsl_print, glsl_check = glsl_check })
 	end,
 }
 
 local typed_term_glsl = {}
 
-function typed_term_glsl:literal(pp)
+typed_term_glsl.literal = {}
+function typed_term_glsl.literal:print(pp)
 	local literal_value = self:unwrap_literal()
 
 	if not literal_value:is_host_value() then
-		return glsl_fallback(self, pp)
+		return glsl_print_fallback(self, pp)
 	end
 	local val = literal_value:unwrap_host_value()
 	pp:any(val)
 end
 
+function typed_term_glsl.literal:check(check)
+	local literal_value = self:unwrap_literal()
+	if not literal_value:is_host_value() then
+		return false
+	end
+	return true
+end
+
 local function access_application(self, subject, index, pp, varnames)
 	if index ~= 1 then
-		return glsl_fallback(self, pp)
+		return glsl_print_fallback(self, pp)
 	end
 
 	local f, arg = subject:unwrap_application()
 
 	if not f:is_literal() or not f:unwrap_literal():is_host_value() then
-		return glsl_fallback(self, pp)
+		return glsl_print_fallback(self, pp)
 	end
 	local host_f = f:unwrap_literal():unwrap_host_value()
 
 	local print_f = internals_interface.glsl_registry[host_f]
 	if not print_f then
-		return glsl_fallback(self, pp)
+		return glsl_print_fallback(self, pp)
 	end
 
 	if not arg:is_host_tuple_cons() then
-		return glsl_fallback(self, pp)
+		return glsl_print_fallback(self, pp)
 	end
 	local elements = arg:unwrap_host_tuple_cons()
 
@@ -76,12 +100,12 @@ local function access_variable(self, subject, index, pp, varnames)
 
 	local var = varnames[var_index]
 	if not var then
-		return glsl_fallback(self, pp)
+		return glsl_print_fallback(self, pp)
 	end
 
 	local var_name = var[index]
 	if not var_name then
-		return glsl_fallback(self, pp)
+		return glsl_print_fallback(self, pp)
 	end
 
 	pp:unit(var_name)
@@ -96,7 +120,7 @@ function typed_term_glsl:tuple_element_access(pp, varnames)
 	if subject:is_bound_variable() then
 		return access_variable(self, subject, index, pp, varnames)
 	end
-	return glsl_fallback(self, pp)
+	return glsl_print_fallback(self, pp)
 end
 
 local function glsl_print(pp, unknown, ...)
@@ -122,7 +146,7 @@ local function glsl_print(pp, unknown, ...)
 			return
 		end
 	end
-	return glsl_fallback(unknown, pp)
+	return glsl_print_fallback(unknown, pp)
 end
 
 return {
