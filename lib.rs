@@ -46,8 +46,8 @@ terms = require "terms"
 exprs = require "alicorn-expressions"
 profile = require "profile"
 
-function alc_parse_string(src)
-  return format.read(src, "<string value>")
+function alc_parse_string(src, name)
+  return format.read(src, name or "<string value>")
 end
 
 function alc_parse_file(filename)
@@ -113,10 +113,10 @@ end
         Ok(Self { lua })
     }
 
-    pub fn parse(&self, source: impl AsRef<str>) -> Result<mlua::Value, mlua::Error> {
+    pub fn parse(&self, source: impl AsRef<str>, name: Option<impl AsRef<str>>) -> Result<mlua::Value, mlua::Error> {
         let alc_parse_string: LuaFunction = self.lua.load("alc_parse_string").eval()?;
 
-        alc_parse_string.call(source.as_ref())
+        alc_parse_string.call((source.as_ref(), name.as_ref().map(|s| s.as_ref())))
     }
     pub fn parse_file(
         &self,
