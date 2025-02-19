@@ -58,7 +58,6 @@ else
 	interpreter_argv = { [0] = "lua" }
 	argv = { [0] = "runtest.lua" }
 end
-local test_harness = true
 local print_src = false
 local print_ast = false
 local print_inferrable = false
@@ -546,54 +545,48 @@ if reload_mode then
 	end
 end
 
-if test_harness then
-	local test_list_file, err = io.open("testlist.json")
-	if not test_list_file then
-		error(err)
+local test_list_file, err = io.open("testlist.json")
+if not test_list_file then
+	error(err)
+end
+local test_list, pos, err = json.decode(test_list_file:read("a"), 1, nil)
+---@cast test_list table
+
+if err ~= nil then
+	print("Couldn't decode JSON describing tests! " .. tostring(err))
+	return
+end
+
+---@type { [string]: string }
+local logs = {}
+local total = 0
+local failures = {}
+
+for file, completion in pairs(test_list) do
+	if (not test_single) or (test_single and file == test_name) then
+		total = total + 1
+
+		-- We do not attempt to capture errors here because no test should cause an internal compiler error, only recoverable errors.
+		-- If a shadowing error occurs, it means a test caused an internal compiler error that was captured by the syntax that left
+		-- the tests in a bad state.
+		evaluator.typechecker_state:speculate(function()
+			local ok, log = perform_test(file, completion, env)
+
+			logs[file] = log
+			if not ok then
+				U.append(failures, file)
+			end
+
+			return false
+		end)
 	end
-	local test_list, pos, err = json.decode(test_list_file:read("a"), 1, nil)
-	---@cast test_list table
+end
 
-	if err ~= nil then
-		print("Couldn't decode JSON describing tests! " .. tostring(err))
-		return
-	end
-
-	---@type { [string]: string }
-	local logs = {}
-	local total = 0
-	local failures = {}
-
-	for file, completion in pairs(test_list) do
-		if (not test_single) or (test_single and file == test_name) then
-			total = total + 1
-
-			-- We do not attempt to capture errors here because no test should cause an internal compiler error, only recoverable errors.
-			-- If a shadowing error occurs, it means a test caused an internal compiler error that was captured by the syntax that left
-			-- the tests in a bad state.
-			evaluator.typechecker_state:speculate(function()
-				local ok, log = perform_test(file, completion, env)
-
-				logs[file] = log
-				if not ok then
-					U.append(failures, file)
-				end
-
-				return false
-			end)
-		end
-	end
-
-	if #failures == 0 then
-		io.write("All " .. tostring(total) .. " tests passed!\n")
-	else
-		io.write(tostring(total - #failures) .. " out of " .. tostring(total) .. " tests passed. Failures:\n")
-		for _, v in ipairs(failures) do
-			io.write("- " .. v .. "\n")
-		end
-	end
+if #failures == 0 then
+	io.write("All " .. tostring(total) .. " tests passed!\n")
 else
-	local env, bound_expr, purity = env:exit_block(expr, prelude_env)
-
-	execute_alc_file(bound_expr, print)
+	io.write(tostring(total - #failures) .. " out of " .. tostring(total) .. " tests passed. Failures:\n")
+	for _, v in ipairs(failures) do
+		io.write("- " .. v .. "\n")
+	end
 end
