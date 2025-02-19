@@ -171,7 +171,7 @@ if print_usage then
   -T, --test <file>
           Choose a specific test to run.
           (mnemonic: Test)
-          Without -T, all tests in testlist.json are run.
+          Without -T, all tests in test-config.json are run.
 ]=]
 	io.stderr:write(usage:format(argv[0]))
 	os.exit()
@@ -187,7 +187,21 @@ if profile_run then
 	io.write("Profile what : ", profile_what, "\n")
 end
 
-local prelude = "prelude.alc"
+---@class (exact) runtest.test_config
+---@field modules {path: runtest.test_config.module}
+---@field tests string[]
+
+---@class (exact) runtest.test_config.module
+---@field failure_point? failure_point
+---@field path string
+---@field using? string[]
+
+local test_config_file, err = io.open("test-config.json")
+if not test_config_file then
+	error(err)
+end
+local test_config, pos, err = json.decode(test_config_file:read("a"), 1, nil)
+---@cast test_config runtest.test_config
 
 ---@type {[string]: true}
 local explicit_test_set = {}
@@ -197,8 +211,8 @@ if explicit_tests then
 	end
 end
 
----@enum failurepoint
-local failurepoint = {
+---@enum failure_point
+local failure_point = {
 	parsing = "parsing",
 	termgen = "termgen",
 	typechecking = "typechecking",
@@ -211,7 +225,7 @@ local failurepoint = {
 ---@param env Environment
 ---@param log function
 ---@return boolean
----@return failurepoint | anchored_inferrable
+---@return failure_point | anchored_inferrable
 ---@return nil | Environment
 local function load_alc_file(name, env, log)
 	local src_file, err = io.open(name)
@@ -234,7 +248,7 @@ local function load_alc_file(name, env, log)
 
 	if not ok then
 		log(code) -- error
-		return false, failurepoint.parsing
+		return false, failure_point.parsing
 	end
 
 	checkpointTime = os.clock()
@@ -268,7 +282,7 @@ local function load_alc_file(name, env, log)
 		checkpointTime = os.clock()
 		log(("Evaluating failed in %.3f seconds"):format(checkpointTime - checkpointTime2))
 		log(expr)
-		return false, failurepoint.termgen
+		return false, failure_point.termgen
 	end
 	return true, expr, env
 end
@@ -276,7 +290,7 @@ end
 ---@param bound_expr anchored_inferrable
 ---@param log function
 ---@param env Environment
----@return failurepoint
+---@return failure_point
 local function execute_alc_file(bound_expr, log, env)
 	checkpointTime = os.clock()
 	log(("Got a term! in %.3f seconds"):format(checkpointTime - checkpointTime2))
@@ -300,7 +314,7 @@ local function execute_alc_file(bound_expr, log, env)
 
 	if not ok then
 		log(type) -- error
-		return failurepoint.typechecking
+		return failure_point.typechecking
 	end
 
 	if profile_run and profile_what == "infer" then
@@ -346,7 +360,7 @@ local function execute_alc_file(bound_expr, log, env)
 
 	if not ok then
 		log(err)
-		return failurepoint.typechecking
+		return failure_point.typechecking
 	end
 
 	log("Evaluating")
@@ -356,7 +370,7 @@ local function execute_alc_file(bound_expr, log, env)
 
 	if not ok then
 		log(result)
-		return failurepoint.evaluating
+		return failure_point.evaluating
 	end
 
 	checkpointTime = os.clock()
@@ -374,7 +388,7 @@ local function execute_alc_file(bound_expr, log, env)
 
 	if not ok then
 		log(result_exec) -- error
-		return failurepoint.executing
+		return failure_point.executing
 	end
 
 	checkpointTime = os.clock()
@@ -385,7 +399,7 @@ local function execute_alc_file(bound_expr, log, env)
 
 	log(("Runtest succeeded in %.3f seconds"):format(checkpointTime - startTime))
 
-	return failurepoint.success
+	return failure_point.success
 end
 
 -- local graph_backtrace = 5
@@ -451,9 +465,11 @@ end
 
 local env = base_env.create()
 
+local prelude_module = test_config.modules["prelude"]
+
 local prelude_env, env = env:enter_block(terms.block_purity.effectful)
 
-local ok, expr, env = load_alc_file(prelude, env, print)
+local ok, expr, env = load_alc_file(prelude_module.path, env, print)
 if not ok then
 	if graph_backtrace ~= nil then
 		local snapshots = internal_state.snapshot_buffer
@@ -561,13 +577,6 @@ if reload_mode then
 	end
 end
 
-local test_list_file, err = io.open("testlist.json")
-if not test_list_file then
-	error(err)
-end
-local test_list, pos, err = json.decode(test_list_file:read("a"), 1, nil)
----@cast test_list table
-
 if err ~= nil then
 	print("Couldn't decode JSON describing tests! " .. tostring(err))
 	return
@@ -578,19 +587,20 @@ local logs = {}
 local total = 0
 local failures = {}
 
-for test_path, completion in pairs(test_list) do
-	if explicit_tests == nil or explicit_test_set[test_path] then
+for _i, test_name in ipairs(test_config.tests) do
+	local test_module = test_config.modules[test_name]
+	if explicit_tests == nil or explicit_test_set[test_module.path] then
 		total = total + 1
 
 		-- We do not attempt to capture errors here because no test should cause an internal compiler error, only recoverable errors.
 		-- If a shadowing error occurs, it means a test caused an internal compiler error that was captured by the syntax that left
 		-- the tests in a bad state.
 		evaluator.typechecker_state:speculate(function()
-			local ok, log = perform_test(test_path, completion, env)
+			local ok, log = perform_test(test_module.path, test_module.failure_point or failure_point.success, env)
 
-			logs[test_path] = log
+			logs[test_module.path] = log
 			if not ok then
-				U.append(failures, test_path)
+				U.append(failures, test_module.path)
 			end
 
 			return false
