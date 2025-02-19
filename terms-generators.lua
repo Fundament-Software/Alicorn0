@@ -1145,6 +1145,7 @@ declare_set = U.memoize(declare_set, false)
 ---@field append fun(self: ArrayValue, v: Value)
 ---@field copy fun(self: ArrayValue, integer?, integer?): ArrayValue
 ---@field map fun(self: ArrayValue, target: ArrayType, fn: fun(value: Value): Value): ArrayValue
+---@field imap fun(self: ArrayValue, target: ArrayType, fn: fun(i: integer, value: Value): Value): ArrayValue map with access to the index
 ---@field get fun(self: MapValue, key: Value): Value?
 ---@field unpack fun(self: ArrayValue): ...
 ---@field pretty_print fun(self: ArrayValue, ...)
@@ -1274,10 +1275,16 @@ local function gen_array_methods(self, value_type)
 			return table.unpack(val.array, 1, val.n)
 		end,
 		map = function(val, to, fn)
+			local function i_fn(_i, value)
+				return fn(value)
+			end
+			return val:imap(to, i_fn)
+		end,
+		imap = function(val, to, fn)
 			local value_type = to.value_type
 			local array, new_array, n = val.array, {}, val.n
 			for i = 1, n do
-				local value = fn(array[i])
+				local value = fn(i, array[i])
 				if value_type.value_check(value) ~= true then
 					error(
 						attempt_traceback(
