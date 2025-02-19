@@ -1144,7 +1144,7 @@ declare_set = U.memoize(declare_set, false)
 ---@field len fun(self: ArrayValue): integer
 ---@field append fun(self: ArrayValue, v: Value)
 ---@field copy fun(self: ArrayValue, integer?, integer?): ArrayValue
----@field map fun(self: ArrayValue, target: ArrayType, fn: fun(any) : any): ArrayValue
+---@field map fun(self: ArrayValue, target: ArrayType, fn: fun(value: Value): Value): ArrayValue
 ---@field get fun(self: MapValue, key: Value): Value?
 ---@field unpack fun(self: ArrayValue): ...
 ---@field pretty_print fun(self: ArrayValue, ...)
@@ -1163,6 +1163,10 @@ local function array_unchecked_new_fn(self, array, n)
 end
 
 local array_type_mt = {
+	---@generic T
+	---@param self ArrayType
+	---@param ... T
+	---@returns ArrayValue<T> val
 	__call = function(self, ...)
 		local value_type = self.value_type
 		local array, n = {}, select("#", ...)
