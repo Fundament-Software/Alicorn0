@@ -643,6 +643,8 @@ end
 ---@overload fun(...): MapValue
 ---@field key_type Type
 ---@field value_type Type
+---@field new fun(self: MapType, map: { [Value]: Value }): MapValue
+---@field unchecked_new fun(self: MapType, map: { [Value]: Value }): MapValue
 ---@field __index table
 ---@field __newindex function
 ---@field __pairs fun(self: MapValue): function, MapValue, Value?
@@ -660,16 +662,54 @@ end
 ---@field pretty_print fun(self: MapValue, ...)
 ---@field default_print fun(self: MapValue, ...)
 
+---@param self MapType
+---@param key_type Type
+---@param value_type Type
+---@param map { [Value]: Value }
+---@param key Value
+---@param value Value
+local function map_set_value(self, key_type, value_type, map, key, value)
+	if key_type.value_check(key) ~= true then
+		p("map-set", key_type, value_type)
+		p(key)
+		error("wrong key type passed to map:set")
+	end
+	if value_type.value_check(value) ~= true then
+		p("map-set", key_type, value_type)
+		p(value)
+		error("wrong value type passed to map:set")
+	end
+	local freeze_impl_key = traits.freeze:get(key_type)
+	if freeze_impl_key then
+		key = freeze_impl_key.freeze(key_type, key)
+	else
+		print(("WARNING: while setting %s, can't freeze key (type %s)"):format(tostring(self), tostring(key_type)))
+		print("this may lead to suboptimal hash-consing")
+	end
+	local freeze_impl_value = traits.freeze:get(value_type)
+	if freeze_impl_value then
+		value = freeze_impl_value.freeze(value_type, value)
+	else
+		print(("WARNING: while setting %s, can't freeze value (type %s)"):format(tostring(self), tostring(value_type)))
+		print("this may lead to suboptimal hash-consing")
+	end
+	map[key] = value
+end
+
 local map_type_mt = {
+	---@param self MapType
+	---@param ... Value
+	---@return MapValue val
 	__call = function(self, ...)
+		local map = {}
 		local val = {
-			_map = {},
+			_map = map,
 			is_frozen = false, -- bypass __newindex when setting is_frozen = true
 		}
 		setmetatable(val, self)
 		local args = table.pack(...)
 		for i = 1, args.n, 2 do
-			val:set(args[i], args[i + 1])
+			map_set_value(self, self.key_type, self.value_type, map, args[i], args[i + 1])
 		end
 		return val
 	end,
@@ -687,38 +727,7 @@ local function gen_map_methods(self, key_type, value_type)
 			if val.is_frozen then
 				error("trying to modify a frozen map")
 			end
-			if key_type.value_check(key) ~= true then
-				p("map-set", key_type, value_type)
-				p(key)
-				error("wrong key type passed to map:set")
-			end
-			if value_type.value_check(value) ~= true then
-				p("map-set", key_type, value_type)
-				p(value)
-				error("wrong value type passed to map:set")
-			end
-			local freeze_impl_key = traits.freeze:get(key_type)
-			if freeze_impl_key then
-				key = freeze_impl_key.freeze(key_type, key)
-			else
-				print(
-					("WARNING: while setting %s, can't freeze key (type %s)"):format(tostring(self), tostring(key_type))
-				)
-				print("this may lead to suboptimal hash-consing")
-			end
-			local freeze_impl_value = traits.freeze:get(value_type)
-			if freeze_impl_value then
-				value = freeze_impl_value.freeze(value_type, value)
-			else
-				print(
-					("WARNING: while setting %s, can't freeze value (type %s)"):format(
-						tostring(self),
-						tostring(value_type)
-					)
-				)
-				print("this may lead to suboptimal hash-consing")
-			end
-			val._map[key] = value
+			map_set_value(self, key_type, value_type, val._map, key, value)
 		end,
 		reset = function(val, key)
 			if val.is_frozen then
@@ -744,8 +753,13 @@ local function gen_map_methods(self, key_type, value_type)
 		end,
 		copy = function(val, onto, conflict)
 			if not onto then
-				onto = self()
-			elseif not conflict then
+				local map = {}
+				for key, value in pairs(val._map) do
+					map[key] = value
+				end
+				return self:unchecked_new(map)
+			end
+			if not conflict then
 				error("map:copy onto requires a conflict resolution function")
 			end
 			local rt = getmetatable(onto)
@@ -775,6 +789,31 @@ local function gen_map_methods(self, key_type, value_type)
 		pretty_print = pretty_printer.pretty_print,
 		default_print = pretty_printer.default_print,
 	}
+end
+
+---@param self MapType
+---@param map { [Value]: Value }
+---@return MapValue val
+local function map_unchecked_new_fn(self, map)
+	return setmetatable({
+		_map = map,
+		is_frozen = false,
+	}, self)
+end
+
+---@param self MapType
+---@param map { [Value]: Value }
+---@return MapValue val
+local function map_new_fn(self, map)
+	local key_type, value_type = self.key_type, self.value_type
+	local new_map = {}
+	for key, value in pairs(map) do
+		map_set_value(self, key_type, value_type, new_map, key, value)
+	end
+	return setmetatable({
+		_map = new_map,
+		is_frozen = false,
+	}, self)
 end
 
 local function map_newindex()
@@ -836,6 +875,8 @@ local function define_map(self, key_type, value_type)
 
 	setmetatable(self, map_type_mt)
 	---@cast self MapType
+	self.unchecked_new = map_unchecked_new_fn
+	self.new = map_new_fn
 	-- NOTE: this isn't primitive equality; this type has a __eq metamethod!
 	self.value_check = metatable_equality(self)
 	self.key_type = key_type

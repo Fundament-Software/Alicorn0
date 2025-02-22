@@ -1453,7 +1453,7 @@ local function unify_flex_type(t)
 		---@cast unify_value -nil
 		local flex_t = array(flex_value_t)
 		---@param values ArrayValue
-		---@return Value flex_value
+		---@return ArrayValue flex_value
 		local function unify(values)
 			return U.notail(values:map(flex_t, unify_value))
 		end
