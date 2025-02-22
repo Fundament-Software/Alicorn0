@@ -1606,6 +1606,7 @@ local terms_gen = {
 	builtin_function = declare_builtin("function"),
 	builtin_table = declare_builtin("table"),
 	array_type_mt = array_type_mt,
+	map_type_mt = map_type_mt,
 	define_multi_enum = define_multi_enum,
 	any_lua_type = declare_foreign(function(_val)
 		return true

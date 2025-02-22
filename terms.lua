@@ -1351,6 +1351,9 @@ local function replace_flex_type(tag, t)
 	elseif getmetatable(t) == gen.array_type_mt then
 		---@cast t ArrayType
 		return U.notail(array(replace_flex_type(tag, t.value_type)))
+	elseif getmetatable(t) == gen.map_type_mt then
+		---@cast t MapType
+		return U.notail(map(replace_flex_type(tag, t.key_type), replace_flex_type(tag, t.value_type)))
 	elseif t == flex_runtime_context_type then
 		if tag == "strict" then
 			return strict_runtime_context_type
@@ -1395,6 +1398,25 @@ local function specify_flex_value(arg, t)
 		end
 		local arg_strict_value_t = replace_flex_type("strict", arg_value_t)
 		return "strict", array(arg_strict_value_t):unchecked_new(arg_strict_values, arg_values_length)
+	elseif getmetatable(t) == gen.map_type_mt then
+		---@cast arg MapValue
+		---@cast t MapType
+		local arg_key_t, arg_value_t = t.key_type, t.value_type
+		local arg_values, arg_strict_values = arg._map, {}
+		for arg_key, arg_value in pairs(arg_values) do
+			local arg_key_tag, arg_strict_key = specify_flex_value(arg_key, arg_key_t)
+			if arg_key_tag == "stuck" then
+				return "stuck", arg
+			end
+			local arg_value_tag
+			arg_value_tag, arg_strict_values[arg_strict_key] = specify_flex_value(arg_value, arg_value_t)
+			if arg_value_tag == "stuck" then
+				return "stuck", arg
+			end
+		end
+		local arg_strict_key_t = replace_flex_type("strict", arg_key_t)
+		local arg_strict_value_t = replace_flex_type("strict", arg_value_t)
+		return "strict", map(arg_strict_key_t, arg_strict_value_t):unchecked_new(arg_strict_values)
 	elseif t == flex_continuation then
 		---@cast arg flex_continuation
 		if arg:is_stuck() then
@@ -1456,6 +1478,43 @@ local function unify_flex_type(t)
 		---@return ArrayValue flex_value
 		local function unify(values)
 			return U.notail(values:map(flex_t, unify_value))
+		end
+		return flex_t, unify
+	elseif t_mt == gen.map_type_mt then
+		---@cast t MapType
+		local key_t, value_t = t.key_type, t.value_type
+		local flex_key_t, unify_key = unify_flex_type(key_t)
+		local flex_value_t, unify_value = unify_flex_type(value_t)
+		if unify_key == nil and unify_value == nil then
+			return t, nil
+		end
+		if unify_key == nil then
+			---@generic T
+			---@param key T
+			---@return T key
+			function unify_key(key)
+				return key
+			end
+		end
+		if unify_value == nil then
+			---@generic T
+			---@param val T
+			---@return T val
+			function unify_value(val)
+				return val
+			end
+		end
+		local flex_t = map(flex_key_t, flex_value_t)
+		---@param vals MapValue
+		---@return MapValue flex_vals
+		local function unify(vals)
+			---@type (Value | FlexRuntimeContext)[]
+			local flex_vals = {}
+			for key, val in pairs(vals._map) do
+				local flex_key, flex_val = unify_key(key), unify_value(val)
+				flex_vals[flex_key] = flex_val
+			end
+			return U.notail(flex_t:unchecked_new(flex_vals))
 		end
 		return flex_t, unify
 	end
