@@ -59,6 +59,8 @@ else
 	argv = { [0] = "runtest.lua" }
 end
 local test_harness = true
+---@type nil | string[]
+local print_file_ast = nil
 local print_src = false
 local print_ast = false
 local print_inferrable = false
@@ -116,6 +118,12 @@ local short_opts = {
 }
 local long_opts = {
 	["help"] = "?",
+	["print-file-ast:"] = function(_opt_repr, path)
+		if print_file_ast == nil then
+			print_file_ast = {}
+		end
+		table.insert(print_file_ast, path)
+	end,
 	["print-src"] = "S",
 	["print-ast"] = "f",
 	["print-inferrable"] = "s",
@@ -135,6 +143,8 @@ local first_operand = getopt(argv, short_opts, long_opts)
 
 if print_usage then
 	local usage = [=[Usage: %s [-Sfstv] [(-p|-P) <file>[,<what>]] [-T <test>]
+      --print-file-ast <path>
+          Show the AST generated from the source code of the provided file.
   -S, --print-source
           Print the Alicorn source code about to be tested.
           (mnemonic: Source)
@@ -194,6 +204,32 @@ local failurepoint = {
 	executing = "executing",
 	success = "success",
 }
+
+if print_file_ast ~= nil then
+	for _, src_path in ipairs(print_file_ast) do
+		---@diagnostic disable-next-line: no-unknown
+		local src_file, err
+		if src_path == "-" then
+			local ok
+			ok, src_file = pcall(io.input)
+			if not ok then
+				src_file, err = nil, src_file
+			end
+		else
+			src_file, err = io.open(src_path, "r")
+		end
+		if not src_file then
+			error(err)
+		end
+		local src = src_file:read("a")
+		local ok, code = pcall(format.read, src, src_path)
+		if not ok then
+			error(code)
+		end
+		io.write(format.lispy_print(code), "\n")
+	end
+	os.exit()
+end
 
 ---@param name string
 ---@param env Environment
