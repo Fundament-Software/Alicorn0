@@ -1086,6 +1086,8 @@ declare_set = U.memoize(declare_set, false)
 ---@overload fun(...): ArrayValue
 ---@field value_type Type
 ---@field methods { [string]: function }
+---@field new fun(self: ArrayType, array: Value[], first?: integer, last?: integer): ArrayValue
+---@field unchecked_new fun(self: ArrayType, array: Value[], n?: integer): ArrayValue
 ---@field __eq fun(ArrayValue, ArrayValue): boolean
 ---@field __index fun(self: ArrayValue, key: integer | string) : Value | function
 ---@field __newindex fun(self: ArrayValue, key: integer, value: Value)
@@ -1159,17 +1161,22 @@ local function array_unchecked_new_fn(self, array, n)
 	}, self)
 end
 
-local function array_new_fn(self, array, n)
+local function array_new_fn(self, array, first, last)
 	local value_type = self.value_type
 	local new_array = {}
-	if n == nil then
-		n = array.n
-		if n == nil then
-			n = #array
+	if first == nil then
+		first = 1
+	end
+	if last == nil then
+		last = array.n
+		if last == nil then
+			last = #array
 		end
 	end
-	for i = 1, n do
-		local value = array[i]
+	local i = 0
+	for j = first, last do
+		i = i + 1
+		local value = array[j]
 		if value_type.value_check(value) ~= true then
 			error(
 				attempt_traceback(
@@ -1184,7 +1191,7 @@ local function array_new_fn(self, array, n)
 		new_array[i] = value
 	end
 	return setmetatable({
-		n = n,
+		n = i,
 		array = new_array,
 		is_frozen = false,
 	}, self)
@@ -1219,13 +1226,14 @@ local function gen_array_methods(self, value_type)
 			val.array[n], val.n = value, n
 		end,
 		copy = function(val, first, last)
-			first = first or 1
-			last = last or val.n
+			first, last = first or 1, last or val.n
 			local array, new_array = val.array, {}
-			for i = first, last do
-				new_array[i] = array[i]
+			local i = 0
+			for j = first, last do
+				i = i + 1
+				new_array[i] = array[j]
 			end
-			return self:unchecked_new(new_array, n)
+			return self:unchecked_new(new_array, i)
 		end,
 		unpack = function(val)
 			return table.unpack(val.array, 1, val.n)
@@ -1423,7 +1431,7 @@ end
 
 local function array_freeze_helper(t, n)
 	local function array_freeze_helper_aux(array)
-		local frozenval = t:new(array, n)
+		local frozenval = t:new(array, 1, n)
 		frozenval.is_frozen = true
 		return frozenval
 	end
