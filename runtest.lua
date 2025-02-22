@@ -63,6 +63,7 @@ local test_harness = true
 local print_file_ast = nil
 local print_src = false
 local print_ast = false
+local print_ast_spans = true
 local print_inferrable = false
 local print_typed = false
 local print_evaluated = false
@@ -126,6 +127,12 @@ local long_opts = {
 	end,
 	["print-src"] = "S",
 	["print-ast"] = "f",
+	["print-ast-spans"] = function(_opt_repr)
+		print_ast_spans = true
+	end,
+	["no-print-ast-spans"] = function(_opt_repr)
+		print_ast_spans = false
+	end,
 	["print-inferrable"] = "s",
 	["print-typed"] = "t",
 	["print-evaluated"] = "v",
@@ -151,6 +158,8 @@ if print_usage then
   -f, --print-ast
           Show the AST generated from the source code.
           (mnemonic: format.read)
+      --[no-]print-ast-spans
+          Enable or disable span information when printing ASTs.
   -s, --print-inferrable
           Show the unchecked term. *
           (mnemonic: syntax:match)
@@ -226,7 +235,7 @@ if print_file_ast ~= nil then
 		if not ok then
 			error(code)
 		end
-		io.write(format.lispy_print(code), "\n")
+		io.write(format.lispy_print(code, print_ast_spans), "\n")
 	end
 	os.exit()
 end
@@ -266,7 +275,7 @@ local function load_alc_file(name, env, log)
 	checkpointTime2 = checkpointTime
 	if print_ast then
 		io.stderr:write("Printing raw AST\n")
-		io.stderr:write(format.lispy_print(code), "\n")
+		io.stderr:write(format.lispy_print(code, print_ast_spans), "\n")
 		io.stderr:write("End printing raw AST\n")
 	end
 
