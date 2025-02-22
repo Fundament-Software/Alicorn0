@@ -3,6 +3,7 @@
 
 use mlua::prelude::*;
 
+const LUA_INIT: &[u8] = include_bytes!("lua-init.lua");
 const ALICORN: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/alicorn.lua"));
 const PRELUDE: &[u8] = include_bytes!("prelude.alc");
 const GLSL_PRELUDE: &[u8] = include_bytes!("glsl-prelude.alc");
@@ -177,13 +178,9 @@ end
 return M
         "#.as_bytes());
 
+        lua.load(LUA_INIT).exec()?;
         lua.load(
             r#"
-        jit.opt.start("maxtrace=10000")
-        jit.opt.start("maxmcode=4096")
-        jit.opt.start("recunroll=5")
-        jit.opt.start("loopunroll=60")
-        
         local create_module = sandbox_impl(true)
         
         function load_in_sandbox(bytes, additional_interface)
