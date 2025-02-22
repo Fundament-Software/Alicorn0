@@ -1348,13 +1348,9 @@ local function replace_flex_type(tag, t)
 			return flex_value
 		end
 		error("Unknown tag: " .. tag)
-	elseif t == array(flex_value) then
-		if tag == "strict" then
-			return U.notail(array(strict_value))
-		elseif tag == "stuck" then
-			return U.notail(array(flex_value))
-		end
-		error("Unknown tag: " .. tag)
+	elseif getmetatable(t) == gen.array_type_mt then
+		---@cast t ArrayType
+		return U.notail(array(replace_flex_type(tag, t.value_type)))
 	elseif t == flex_runtime_context_type then
 		if tag == "strict" then
 			return strict_runtime_context_type
@@ -1385,18 +1381,20 @@ local function specify_flex_value(arg, t)
 			return "stuck", arg
 		end
 		return "strict", U.notail(arg:unwrap_strict())
-	elseif t == array(flex_value) then
+	elseif getmetatable(t) == gen.array_type_mt then
 		---@cast arg ArrayValue
-		local arg_values, arg_values_length = arg:copy().array, arg.n
+		---@cast t ArrayType
+		local arg_value_t = t.value_type
+		local arg_values, arg_strict_values, arg_values_length = arg.array, {}, arg.n
 		for i = 1, arg_values_length do
-			local arg_value = arg_values[i] --[[@as flex_value]]
-			if arg_value:is_stuck() then
+			local arg_value_tag
+			arg_value_tag, arg_strict_values[i] = specify_flex_value(arg_values[i], arg_value_t)
+			if arg_value_tag == "stuck" then
 				return "stuck", arg
-			else
-				arg_values[i] = arg_value:unwrap_strict()
 			end
 		end
-		return "strict", array(strict_value):unchecked_new(arg_values, arg_values_length)
+		local arg_strict_value_t = replace_flex_type("strict", arg_value_t)
+		return "strict", array(arg_strict_value_t):unchecked_new(arg_strict_values, arg_values_length)
 	elseif t == flex_continuation then
 		---@cast arg flex_continuation
 		if arg:is_stuck() then
@@ -1438,12 +1436,17 @@ local function unify_flex_value(arg)
 	elseif stuck_value.value_check(arg) then
 		---@cast arg stuck_value
 		return U.notail(flex_value.stuck(arg))
-	elseif array(strict_value).value_check(arg) then
-		---@cast arg ArrayValue<strict_value>
-		return U.notail(arg:map(array(flex_value), flex_value.strict))
-	elseif array(stuck_value).value_check(arg) then
-		---@cast arg ArrayValue<stuck_value>
-		return U.notail(arg:map(array(flex_value), flex_value.stuck))
+	elseif getmetatable(getmetatable(arg)) == gen.array_type_mt then
+		---@cast arg ArrayValue
+		local arg_mt = getmetatable(arg) --[[@as ArrayType]]
+		local arg_value_t = arg_mt.value_type
+		if arg_value_t == strict_value then
+			---@cast arg ArrayValue<strict_value>
+			return U.notail(arg:map(array(flex_value), flex_value.strict))
+		elseif arg_value_t == stuck_value then
+			---@cast arg ArrayValue<stuck_value>
+			return U.notail(arg:map(array(flex_value), flex_value.stuck))
+		end
 	elseif strict_continuation.value_check(arg) then
 		---@cast arg strict_continuation
 		return U.notail(flex_continuation.strict(arg))
