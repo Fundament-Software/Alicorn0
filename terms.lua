@@ -1334,32 +1334,35 @@ local strict_continuation = gen.declare_type()
 ---@module 'types.stuck_continuation'
 local stuck_continuation = gen.declare_type()
 
-local function replace_flex_values(tag, v)
-	if type(v) == "string" then
-		error(debug.traceback("wrong type passed to replace_flex_values"))
+---@param tag ("strict"|"stuck")
+---@param t Type
+---@return Type t
+local function replace_flex_type(tag, t)
+	if type(t) == "string" then
+		error(debug.traceback("wrong type passed to replace_flex_value"))
 	end
-	if v == flex_value then
+	if t == flex_value then
 		if tag == "strict" then
 			return strict_value
 		elseif tag == "stuck" then
 			return flex_value
 		end
 		error("Unknown tag: " .. tag)
-	elseif v == array(flex_value) then
+	elseif t == array(flex_value) then
 		if tag == "strict" then
 			return U.notail(array(strict_value))
 		elseif tag == "stuck" then
 			return U.notail(array(flex_value))
 		end
 		error("Unknown tag: " .. tag)
-	elseif v == flex_runtime_context_type then
+	elseif t == flex_runtime_context_type then
 		if tag == "strict" then
 			return strict_runtime_context_type
 		elseif tag == "stuck" then
 			return flex_runtime_context_type
 		end
 		error("Unknown tag: " .. tag)
-	elseif v == flex_continuation then
+	elseif t == flex_continuation then
 		if tag == "strict" then
 			return strict_continuation
 		elseif tag == "stuck" then
@@ -1368,82 +1371,113 @@ local function replace_flex_values(tag, v)
 		error("Unknown tag: " .. tag)
 	end
 
-	return v
+	return t
 end
 
+---@param arg (Value | StrictRuntimeContext | FlexRuntimeContext)
+---@param t Type
+---@return ("strict"|"stuck") tag
+---@return (Value | StrictRuntimeContext | FlexRuntimeContext) arg
+local function specify_flex_value(arg, t)
+	if t == flex_value then
+		---@cast arg flex_value
+		if arg:is_stuck() then
+			return "stuck", arg
+		end
+		return "strict", U.notail(arg:unwrap_strict())
+	elseif t == array(flex_value) then
+		---@cast arg ArrayValue
+		local arg_values, arg_values_length = arg:copy().array, arg.n
+		for i = 1, arg_values_length do
+			local arg_value = arg_values[i] --[[@as flex_value]]
+			if arg_value:is_stuck() then
+				return "stuck", arg
+			else
+				arg_values[i] = arg_value:unwrap_strict()
+			end
+		end
+		return "strict", array(strict_value):unchecked_new(arg_values, arg_values_length)
+	elseif t == flex_continuation then
+		---@cast arg flex_continuation
+		if arg:is_stuck() then
+			return "stuck", arg
+		end
+		return "strict", U.notail(arg:unwrap_strict())
+	elseif t == flex_runtime_context_type then
+		---@cast arg FlexRuntimeContext
+		if arg.stuck_count > 0 then
+			return "stuck", arg
+		end
+		return "strict", U.notail(arg:as_strict())
+	end
+	return "strict", arg
+end
+
+---@param args (Value | StrictRuntimeContext | FlexRuntimeContext)[]
+---@param types Type[]
+---@return ("strict" | "stuck") tag
+---@return (Value | StrictRuntimeContext | FlexRuntimeContext)[] arg
 local function specify_flex_values(args, types)
-	local stuck = false
 	local strict_args = {}
 	for i, t in ipairs(types) do
-		if t == flex_value then
-			if args[i]:is_stuck() then
-				return "stuck", args
-			end
-			table.insert(strict_args, args[i]:unwrap_strict())
-		elseif t == array(flex_value) then
-			for _, v in ipairs(args[i]) do
-				if v:is_stuck() then
-					return "stuck", args
-				end
-			end
-			local strict_array = array(strict_value)()
-			for _, v in ipairs(args[i]) do
-				strict_array:append(v:unwrap_strict())
-			end
-			table.insert(strict_args, strict_array)
-		elseif t == flex_continuation then
-			if args[i]:is_stuck() then
-				return "stuck", args
-			end
-			table.insert(strict_args, args[i]:unwrap_strict())
-		elseif t == flex_runtime_context_type then
-			if args[i].stuck_count > 0 then
-				return "stuck", args
-			end
-			table.insert(strict_args, args[i]:as_strict())
-		else
-			table.insert(strict_args, args[i])
+		local tag, arg = specify_flex_value(args[i], t)
+		if tag == "stuck" then
+			return tag, args
 		end
+		table.insert(strict_args, arg)
 	end
-
 	return "strict", strict_args
 end
 
-local function unify_flex_values(args)
-	local flex_args = {}
-	for _, v in ipairs(args) do
-		if strict_value.value_check(v) then
-			table.insert(flex_args, flex_value.strict(v))
-		elseif stuck_value.value_check(v) then
-			table.insert(flex_args, flex_value.stuck(v))
-		elseif array(strict_value).value_check(v) then
-			local flex_array = array(flex_value)()
-			for _, v in ipairs(v) do
-				flex_array:append(flex_value.strict(v))
-			end
-			table.insert(flex_args, flex_array)
-		elseif array(stuck_value).value_check(v) then
-			local flex_array = array(flex_value)()
-			for _, v in ipairs(v) do
-				flex_array:append(flex_value.stuck(v))
-			end
-			table.insert(flex_args, flex_array)
-		elseif strict_continuation.value_check(v) then
-			table.insert(flex_args, flex_continuation.strict(v))
-		elseif stuck_continuation.value_check(v) then
-			table.insert(flex_args, flex_continuation.stuck(v))
-		elseif strict_runtime_context_type.value_check(v) then
-			table.insert(flex_args, v:as_flex())
-		else
-			table.insert(flex_args, v)
+---@param arg (Value | StrictRuntimeContext | FlexRuntimeContext)
+---@return (Value | FlexRuntimeContext) arg
+local function unify_flex_value(arg)
+	if strict_value.value_check(arg) then
+		---@cast arg strict_value
+		return U.notail(flex_value.strict(arg))
+	elseif stuck_value.value_check(arg) then
+		---@cast arg stuck_value
+		return U.notail(flex_value.stuck(arg))
+	elseif array(strict_value).value_check(arg) then
+		---@cast arg ArrayValue<strict_value>
+		local flex_array = array(flex_value)()
+		for _, v in ipairs(arg) do
+			flex_array:append(flex_value.strict(v))
 		end
+		return U.notail(flex_array)
+	elseif array(stuck_value).value_check(arg) then
+		---@cast arg ArrayValue<stuck_value>
+		local flex_array = array(flex_value)()
+		for _, v in ipairs(arg) do
+			flex_array:append(flex_value.stuck(v))
+		end
+		return U.notail(flex_array)
+	elseif strict_continuation.value_check(arg) then
+		---@cast arg strict_continuation
+		return U.notail(flex_continuation.strict(arg))
+	elseif stuck_continuation.value_check(arg) then
+		---@cast arg stuck_continuation
+		return U.notail(flex_continuation.stuck(arg))
+	elseif strict_runtime_context_type.value_check(arg) then
+		---@cast arg StrictRuntimeContext
+		return U.notail(arg:as_flex())
 	end
+	return arg
+end
 
+---@param args (Value | StrictRuntimeContext | FlexRuntimeContext)[]
+---@return (Value | FlexRuntimeContext)[] arg
+local function unify_flex_values(args)
+	---@type (Value | FlexRuntimeContext)[]
+	local flex_args = {}
+	for i, v in ipairs(args) do
+		flex_args[i] = unify_flex_value(v)
+	end
 	return flex_args
 end
 
 -- stylua: ignore
-gen.define_multi_enum(flex_continuation, "flex_continuation", replace_flex_values, specify_flex_values, unify_flex_values,
+gen.define_multi_enum(flex_continuation, "flex_continuation", replace_flex_type, specify_flex_values, unify_flex_values,
 { strict = strict_continuation, stuck = stuck_continuation },
 { strict = "strict_continuation", stuck = "stuck_continuation" },
 {
@@ -1473,7 +1507,7 @@ gen.define_multi_enum(flex_continuation, "flex_continuation", replace_flex_value
 gen.define_multi_enum(
 	flex_value,
 	"flex_value",
-	replace_flex_values,
+	replace_flex_type,
 	specify_flex_values,
 	unify_flex_values,
 	{ strict = strict_value, stuck = stuck_value },
