@@ -1440,18 +1440,10 @@ local function unify_flex_value(arg)
 		return U.notail(flex_value.stuck(arg))
 	elseif array(strict_value).value_check(arg) then
 		---@cast arg ArrayValue<strict_value>
-		local flex_array = array(flex_value)()
-		for _, v in ipairs(arg) do
-			flex_array:append(flex_value.strict(v))
-		end
-		return U.notail(flex_array)
+		return U.notail(arg:map(array(flex_value), flex_value.strict))
 	elseif array(stuck_value).value_check(arg) then
 		---@cast arg ArrayValue<stuck_value>
-		local flex_array = array(flex_value)()
-		for _, v in ipairs(arg) do
-			flex_array:append(flex_value.stuck(v))
-		end
-		return U.notail(flex_array)
+		return U.notail(arg:map(array(flex_value), flex_value.stuck))
 	elseif strict_continuation.value_check(arg) then
 		---@cast arg strict_continuation
 		return U.notail(flex_continuation.strict(arg))
