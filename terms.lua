@@ -1427,35 +1427,48 @@ local function specify_flex_values(args, types)
 	return "strict", strict_args
 end
 
+---@param t Type
+---@return Type t
+---@return (fun(val: (Value | StrictRuntimeContext | FlexRuntimeContext)): (flex_val: (Value | FlexRuntimeContext)))? unify
+local function unify_flex_type(t)
+	if t == strict_value then
+		return flex_value, flex_value.strict
+	elseif t == stuck_value then
+		return flex_value, flex_value.stuck
+	elseif t == strict_continuation then
+		return flex_continuation, flex_continuation.strict
+	elseif t == stuck_continuation then
+		return flex_continuation, flex_continuation.stuck
+	elseif t == strict_runtime_context_type then
+		return flex_runtime_context_type, StrictRuntimeContext.as_flex
+	end
+	local t_mt = getmetatable(t)
+	if t_mt == gen.array_type_mt then
+		---@cast t ArrayType
+		local value_t = t.value_type
+		local flex_value_t, unify_value = unify_flex_type(value_t)
+		if unify_value == nil then
+			return t, nil
+		end
+		---@cast unify_value -nil
+		local flex_t = array(flex_value_t)
+		---@param values ArrayValue
+		---@return Value flex_value
+		local function unify(values)
+			return U.notail(values:map(flex_t, unify_value))
+		end
+		return flex_t, unify
+	end
+	return t, nil
+end
+
 ---@param arg (Value | StrictRuntimeContext | FlexRuntimeContext)
 ---@return (Value | FlexRuntimeContext) arg
 local function unify_flex_value(arg)
-	if strict_value.value_check(arg) then
-		---@cast arg strict_value
-		return U.notail(flex_value.strict(arg))
-	elseif stuck_value.value_check(arg) then
-		---@cast arg stuck_value
-		return U.notail(flex_value.stuck(arg))
-	elseif getmetatable(getmetatable(arg)) == gen.array_type_mt then
-		---@cast arg ArrayValue
-		local arg_mt = getmetatable(arg) --[[@as ArrayType]]
-		local arg_value_t = arg_mt.value_type
-		if arg_value_t == strict_value then
-			---@cast arg ArrayValue<strict_value>
-			return U.notail(arg:map(array(flex_value), flex_value.strict))
-		elseif arg_value_t == stuck_value then
-			---@cast arg ArrayValue<stuck_value>
-			return U.notail(arg:map(array(flex_value), flex_value.stuck))
-		end
-	elseif strict_continuation.value_check(arg) then
-		---@cast arg strict_continuation
-		return U.notail(flex_continuation.strict(arg))
-	elseif stuck_continuation.value_check(arg) then
-		---@cast arg stuck_continuation
-		return U.notail(flex_continuation.stuck(arg))
-	elseif strict_runtime_context_type.value_check(arg) then
-		---@cast arg StrictRuntimeContext
-		return U.notail(arg:as_flex())
+	local arg_mt = getmetatable(arg)
+	local _strict_t, unify = unify_flex_type(arg_mt)
+	if unify ~= nil then
+		return U.notail(unify(arg))
 	end
 	return arg
 end
