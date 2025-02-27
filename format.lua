@@ -32,59 +32,19 @@ local anchor_mt = {
 	---@param snd Anchor
 	---@return boolean
 	__lt = function(fst, snd)
-		-- __lt(false, false) = false
-		-- __lt(false, true) = true
-		-- __lt(true, false) = false
-		-- __lt(true, true) = false
-		local fst_internal, snd_internal = fst.internal, snd.internal
-		if not fst_internal and snd_internal then
-			return true
+		if snd.id ~= fst.id then
+			error("cannot compare anchors " .. fst .. ", " .. snd)
 		end
-		if fst_internal == snd_internal then
-			local fst_id, snd_id = fst.id, snd.id
-			if fst_id < snd_id then
-				return true
-			end
-			if fst_id == snd_id then
-				local fst_line, snd_line = fst.line, snd.line
-				if fst_line < snd_line then
-					return true
-				end
-				if fst_line == snd_line then
-					return fst.char < snd.char
-				end
-			end
-		end
-		return false
+		return snd.line > fst.line or (snd.line == fst.line and snd.char > fst.char)
 	end,
 	---@param fst Anchor
 	---@param snd Anchor
 	---@return boolean
 	__le = function(fst, snd)
-		-- __lt(false, false) = false
-		-- __lt(false, true) = true
-		-- __lt(true, false) = false
-		-- __lt(true, true) = false
-		local fst_internal, snd_internal = fst.internal, snd.internal
-		if not fst_internal or snd_internal then
-			return true
+		if snd.id ~= fst.id then
+			error("cannot compare anchors " .. fst .. ", " .. snd)
 		end
-		if fst_internal == snd_internal then
-			local fst_id, snd_id = fst.id, snd.id
-			if fst_id < snd_id then
-				return true
-			end
-			if fst_id == snd_id then
-				local fst_line, snd_line = fst.line, snd.line
-				if fst_line < snd_line then
-					return true
-				end
-				if fst_line == snd_line then
-					return fst.char <= snd.char
-				end
-			end
-		end
-		return false
+		return fst < snd or fst == snd
 	end,
 	---@param fst Anchor
 	---@param snd Anchor
@@ -136,92 +96,6 @@ create_anchor = U.memoize(create_anchor, false)
 local Span = {}
 
 local span_mt = {
-	---@param fst Span
-	---@param snd Span
-	---@return boolean
-	__lt = function(fst, snd)
-		-- __lt(false, false) = false
-		-- __lt(false, true) = true
-		-- __lt(true, false) = false
-		-- __lt(true, true) = false
-		local fst_start, snd_start = fst.start, snd.start
-		local fst_internal, snd_internal = fst_start.internal, snd_start.internal
-		if not fst_internal and snd_internal then
-			return true
-		end
-		if fst_internal == snd_internal then
-			local fst_id, snd_id = fst_start.id, snd_start.id
-			if fst_id < snd_id then
-				return true
-			end
-			if fst_id == snd_id then
-				local fst_start_line, snd_start_line = fst_start.line, snd_start.line
-				if fst_start_line < snd_start_line then
-					return true
-				end
-				if fst_start_line == snd_start_line then
-					local fst_start_char, snd_start_char = fst_start.char, snd_start.char
-					if fst_start_char < snd_start_char then
-						return true
-					end
-					if fst_start_char == snd_start_char then
-						local fst_stop, snd_stop = fst.stop, snd.stop
-						local fst_stop_line, snd_stop_line = fst_stop.line, snd_stop.line
-						if fst_stop_line < snd_stop_line then
-							return true
-						end
-						if fst_stop_line == snd_stop_line then
-							return fst_stop.char < snd_stop.char
-						end
-					end
-				end
-			end
-		end
-		return false
-	end,
-	---@param fst Span
-	---@param snd Span
-	---@return boolean
-	__le = function(fst, snd)
-		-- __lt(false, false) = false
-		-- __lt(false, true) = true
-		-- __lt(true, false) = false
-		-- __lt(true, true) = false
-		local fst_start, snd_start = fst.start, snd.start
-		local fst_internal, snd_internal = fst_start.internal, snd_start.internal
-		if not fst_internal and snd_internal then
-			return true
-		end
-		if fst_internal == snd_internal then
-			local fst_id, snd_id = fst_start.id, snd_start.id
-			if fst_id < snd_id then
-				return true
-			end
-			if fst_id == snd_id then
-				local fst_start_line, snd_start_line = fst_start.line, snd_start.line
-				if fst_start_line < snd_start_line then
-					return true
-				end
-				if fst_start_line == snd_start_line then
-					local fst_start_char, snd_start_char = fst_start.char, snd_start.char
-					if fst_start_char < snd_start_char then
-						return true
-					end
-					if fst_start_char == snd_start_char then
-						local fst_stop, snd_stop = fst.stop, snd.stop
-						local fst_stop_line, snd_stop_line = fst_stop.line, snd_stop.line
-						if fst_stop_line < snd_stop_line then
-							return true
-						end
-						if fst_stop_line == snd_stop_line then
-							return fst_stop.char <= snd_stop.char
-						end
-					end
-				end
-			end
-		end
-		return false
-	end,
 	---@param fst Span
 	---@param snd Span
 	---@return boolean
@@ -303,17 +177,17 @@ end
 
 lpeg.locale(lpeg)
 
-local function create_element(capture)
-	capture.span, capture.start_anchor, capture.stop_anchor = capture.start_anchor:span(capture.stop_anchor), nil, nil
-	return capture
-end
-
 local function element(kind, pattern)
-	return Ct(Cg(V "anchor", "start_anchor") * Cg(Cc(kind), "kind") * pattern) / create_element
+	return Ct(Cg(V "anchor", "start_anchor") * Cg(Cc(kind), "kind") * pattern * Cg(V "anchor", "stop_anchor"))
+		/ function(capture)
+			capture.span, capture.start_anchor, capture.stop_anchor =
+				capture.start_anchor:span(capture.stop_anchor), nil, nil
+			return capture
+		end
 end
 
 local function symbol(value)
-	return element("symbol", Cg(value, "str") * Cg(V "anchor", "stop_anchor"))
+	return element("symbol", Cg(value, "str"))
 end
 
 local function space_tokens(pattern)
@@ -682,11 +556,11 @@ local grammar = P {
 	) / function(list)
 		--assert(list.elements["braceacc"])
 
-		error("FIXME")
+		-- error("FIXME")
 		table.insert(list.elements, 1, {
 			kind = "symbol",
 			str = list.elements["braceacc"],
-			start_anchor = list.start_anchor,
+			span = list.span,
 		})
 
 		list.elements["braceacc"] = nil
@@ -830,23 +704,24 @@ local grammar = P {
 		) ^ 1
 	) / function(symbol, argcalls)
 		local acc = {}
+		local acc_start = symbol.span.start
 
 		acc = table.remove(argcalls, 1)
 		table.insert(acc.elements, 1, symbol)
-		acc.start_anchor = symbol.start_anchor
 		if acc.elements["brace"] then
 			table.insert(acc.elements, 1, acc.elements["brace"])
-			acc.elements[1].start_anchor = acc.start_anchor
+			acc.elements["brace"] = nil
+			acc.elements[1].span = acc_start:span(acc.elements[1].span.stop)
 		end
 
 		for _, v in ipairs(argcalls) do
 			table.insert(v.elements, 1, acc)
-			v.start_anchor = acc.start_anchor
+			v.span = acc_start:span(v.span.stop)
 			acc = v
 
 			if acc.elements["brace"] then
 				table.insert(acc.elements, 1, acc.elements["brace"])
-				acc.elements[1].start_anchor = acc.start_anchor
+				acc.elements[1].span = acc_start:span(acc.elements[1].span.stop)
 			end
 		end
 
@@ -873,6 +748,57 @@ local grammar = P {
 	symbol_chars = (1 - (S '\\#()[]{};,"\t\r\n ' + lpeg.space)) ^ 1,
 	symbol = symbol(V "symbol_chars"),
 }
+
+local function span_text(span, subject)
+	local linesep = lpeg.S "\n\r" ^ 1
+	local elem = lpeg.C((1 - linesep) ^ 0)
+	local lines = lpeg.match(Ct(elem * (linesep * elem) ^ 0), subject)
+
+	local line = lines[span.start.line] or ""
+
+	local tabnum = string.len(lpeg.match(lpeg.C(lpeg.P("\t") ^ 0), line))
+	local start_caret_wsp = ("\t"):rep(tabnum) .. (" "):rep(span.start.char - (1 + tabnum))
+	local linenum_wsp = (" "):rep(string.len(tostring(math.max(span.start.line, span.stop.line))))
+
+	local linenum_wsp_start = (" "):rep(tostring(span.stop.line):len() - tostring(span.start.line):len())
+
+	print(subject)
+	assert(lines[span.start.line])
+
+	local span_text = string_format(
+		[[
+%s ┆
+%i%s ┆%s
+%s ┆%s]],
+		linenum_wsp,
+		span.start.line,
+		linenum_wsp_start,
+		lines[span.start.line],
+		linenum_wsp,
+		start_caret_wsp
+	)
+
+	if span.start.line == span.stop.line then
+		span_text = span_text .. ("^"):rep(span.stop.char - span.start.char)
+	else
+		tabnum = string.len(lpeg.match(C(lpeg.P("\t") ^ 0), lines[span.stop.line]))
+		local stop_caret_wsp = ("\t"):rep(tabnum) .. (" "):rep(span.stop.char - (1 + tabnum))
+
+		span_text = span_text
+			.. string_format(
+				[[^
+...
+%i ┆%s
+%s ┆%s^]],
+				span.stop.line,
+				lines[span.stop.line],
+				linenum_wsp,
+				stop_caret_wsp
+			)
+	end
+
+	return span_text
+end
 
 local function span_error(start_anchor, subject, msg)
 	local lines = {}
@@ -908,8 +834,7 @@ error: %s
 end
 
 ---@class FormatList
----@field start_anchor Anchor
----@field stop_anchor Anchor
+---@field span Anchor
 ---@field kind LiteralKind
 ---@field elements table[]
 
@@ -954,4 +879,5 @@ return {
 	span_mt = span_mt,
 	create_span = create_span,
 	span_here = span_here,
+	span_text = span_text,
 }

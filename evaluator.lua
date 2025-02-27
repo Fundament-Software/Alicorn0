@@ -2300,6 +2300,7 @@ local function check(
 
 	if checkable_term:is_inferrable() then
 		local inferrable_term = checkable_term:unwrap_inferrable()
+		local span, _ = inferrable_term:unwrap_anchored_inferrable()
 		local ok, inferred_type, inferred_usages, typed_term = infer(inferrable_term, typechecking_context)
 		if not ok then
 			---@cast inferred_type -flex_value
@@ -2316,7 +2317,7 @@ local function check(
 				typechecking_context,
 				goal_type,
 				typechecking_context,
-				terms.constraintcause.primitive("inferrable", format.anchor_here())
+				terms.constraintcause.primitive("inferrable at" .. tostring(span), span.start)
 			)
 			if not ok then
 				---@cast err -nil
@@ -2742,7 +2743,7 @@ local function infer_impl(
 		error("infer, typechecking_context: expected a typechecking context")
 	end
 
-	local anchor, inferrable_term = anchor_inferrable_term:unwrap_anchored_inferrable()
+	local span, inferrable_term = anchor_inferrable_term:unwrap_anchored_inferrable()
 
 	if inferrable_term:is_bound_variable() then
 		local index, debuginfo = inferrable_term:unwrap_bound_variable()

@@ -13,7 +13,7 @@ local spanned_name, spanned_name_array = terms.spanned_name, terms.spanned_name_
 
 local function test_empty_tuple()
 	local tuple_term = anchored_inferrable_term(
-		format.anchor_here(),
+		format.span_here(),
 		unanchored_inferrable_term.tuple_cons(anchored_inferrable_term_array(), spanned_name_array())
 	)
 	local ok, inferred_type, usages, typed_term = infer(tuple_term, tc)
