@@ -4,11 +4,11 @@
 ---@class (exact) anchored_inferrable: RecordValue
 anchored_inferrable = {}
 
----@return Anchor
+---@return Span
 ---@return unanchored_inferrable
 function anchored_inferrable:unwrap_anchored_inferrable() end
 
 ---@class (exact) anchored_inferrableType: RecordType
----@overload fun(anchor: Anchor, term: unanchored_inferrable): anchored_inferrable
+---@overload fun(span: Span, term: unanchored_inferrable): anchored_inferrable
 ---@field define_record fun(self: anchored_inferrableType, kind: string, params_with_types: ParamsWithTypes): anchored_inferrableType
 return {}

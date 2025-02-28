@@ -884,8 +884,8 @@ unanchored_inferrable_term:define_enum("unanchored_inferrable", {
 
 -- stylua: ignore
 anchored_inferrable_term:define_record("anchored_inferrable", {
-	"anchor",
-	anchor_type,
+	"span",
+	span_type,
 	"term",
 	unanchored_inferrable_term,
 })
@@ -1945,24 +1945,24 @@ local function strict_tuple_desc(...)
 	return a
 end
 
----@param start_anchor Anchor
+---@param span Span
 ---@param prefix anchored_inferrable
 ---@param debug_prefix spanned_name
 ---@param next_elem anchored_inferrable
 ---@param debug_next_elem spanned_name
 ---@return anchored_inferrable `anchored_inferrable_term(unanchored_inferrable_term.enum_cons(DescCons.cons, anchored_inferrable_term(unanchored_inferrable_term.tuple_cons(…))))`
 ---@diagnostic disable-next-line: incomplete-signature-doc
-local function inferrable_cons(start_anchor, prefix, debug_prefix, next_elem, debug_next_elem, ...)
+local function inferrable_cons(span, prefix, debug_prefix, next_elem, debug_next_elem, ...)
 	if select("#", ...) > 0 then
 		error(("%d extra arguments passed to terms.inferrable_cons"):format(select("#", ...)))
 	end
 	return U.notail(
 		anchored_inferrable_term(
-			start_anchor,
+			span,
 			unanchored_inferrable_term.enum_cons(
 				DescCons.cons,
 				anchored_inferrable_term(
-					start_anchor,
+					span,
 					unanchored_inferrable_term.tuple_cons(
 						anchored_inferrable_term_array(prefix, next_elem),
 						spanned_name_array(debug_prefix, debug_next_elem)
@@ -1974,24 +1974,23 @@ local function inferrable_cons(start_anchor, prefix, debug_prefix, next_elem, de
 end
 
 local inferrable_empty = anchored_inferrable_term(
-	format.anchor_here(),
+	format.span_here(),
 	unanchored_inferrable_term.enum_cons(
 		DescCons.empty,
 		anchored_inferrable_term(
-			format.anchor_here(),
+			format.span_here(),
 			unanchored_inferrable_term.tuple_cons(anchored_inferrable_term_array(), spanned_name_array())
 		)
 	)
 )
 local debug_inferrable_empty = spanned_name("terms.inferrable_empty", format.span_here())
 
----@param start_anchor Anchor
+---@param span Span
 ---@param ... (anchored_inferrable | spanned_name) (`anchored_inferrable`, `spanned_name`)\*
 ---@return anchored_inferrable
-local function inferrable_tuple_desc(start_anchor, ...)
+local function inferrable_tuple_desc(span, ...)
 	local a = inferrable_empty
 	local debug_a = debug_inferrable_empty
-	local span = format.span_here(2)
 	for i = 1, select("#", ...), 2 do
 		local e, debug_e = select(i, ...), select(i + 1, ...)
 		if e ~= nil then
@@ -1999,8 +1998,8 @@ local function inferrable_tuple_desc(start_anchor, ...)
 				error(("inferrable_tuple_desc: missing spanned_name at argument %d"):format(i + 1))
 			end
 			a, debug_a =
-				inferrable_cons(start_anchor, a, debug_a, e, debug_e),
-				spanned_name(("terms.inferrable_tuple_desc.varargs[%d]"):format(i), span)
+				inferrable_cons(span, a, debug_a, e, debug_e),
+				spanned_name(("terms.inferrable_tuple_desc.varargs[%d]"):format(i), format.span_here(2))
 		end
 	end
 	return a

@@ -49,60 +49,73 @@ end
 
 local function create_list(start_anchor, end_anchor, elements)
 	return {
-		start_anchor = start_anchor,
-		end_anchor = end_anchor,
+		span = start_anchor:span(end_anchor),
 		kind = "list",
 		elements = elements,
 	}
 end
 
 local function create_symbol(start_anchor, symbol)
+	local end_anchor = create_anchor(false, start_anchor.id, start_anchor.line, start_anchor.char + string.len(symbol))
+
 	return {
-		start_anchor = start_anchor,
+		span = start_anchor:span(end_anchor),
 		kind = "symbol",
 		str = symbol,
 	}
 end
 
 -- assert that the cursor is always moving forward
-local function forward_moving_cursor(element, cursor)
+local function forward_moving_cursor(element, subject, cursor)
 	local cursor = cursor -- the moving cursor
 
 	if element.kind == "list" then
 		if not cursor then
-			cursor = element.start_anchor
+			cursor = element.span
 		else
-			if not (element.start_anchor >= cursor) then
-				-- print("failed, ", element.start_anchor, " >= ", cursor)
-				return false
+			if not (element.span.start >= cursor.start) then
+				error("failed, " .. tostring(element.span.start) .. " >= " .. cursor.start)
 			end
 		end
 
 		for i, v in ipairs(element.elements) do
-			local accumulator, newcursor = forward_moving_cursor(element.elements[i], cursor)
+			local accumulator, newcursor = forward_moving_cursor(element.elements[i], subject, cursor)
+			assert(newcursor)
 
 			if not accumulator then
-				-- print("accumulator failure")
-				return false
+				return false, newcursor
 			end
-			if not (newcursor >= cursor) then
-				-- print("failed, ", newcursor, " >= ", cursor)
-				return false
-			end
+
+			assert(element.span.stop >= newcursor.stop)
 
 			cursor = newcursor
 		end
 
-		if not (element.end_anchor >= cursor) then
-			-- print("failed, ", element.end_anchor, " >= ", cursor)
-			return false
+		if not (element.span.stop >= cursor.start) then
+			for i, v in ipairs(element.elements) do
+				print(element.kind)
+			end
+			error(
+				element["kind"]
+					.. " with stop span "
+					.. tostring(element.span)
+					.. "\n"
+					.. format.span_text(element.span, subject)
+					.. "\n should have stop anchor more advanced than "
+					.. tostring(cursor.start)
+					.. "\n"
+					.. format.span_text(cursor, subject)
+					.. "\n"
+					.. " but does not"
+			)
 		end
-		cursor = element.end_anchor
 
-		return true, cursor
+		return true, element.span
 	elseif element.kind == "literal" or element.kind == "symbol" or element.kind == "comment" then
 		-- print(element.start_anchor, " >= ", cursor, ", ", element.start_anchor >= cursor)
-		return element.start_anchor >= cursor, element.start_anchor
+		assert(element.span)
+		assert(element.span.start)
+		return element.span.start >= cursor.start, element.span
 	end
 
 	return true, cursor
@@ -111,35 +124,33 @@ end
 local function samelength_testfile_list(text, ast)
 	local _, num_newlines = text:gsub("\n", "\n")
 
-	if not ((ast.end_anchor.line == num_newlines) or (ast.end_anchor.line == (num_newlines + 1))) then
-		print("ast: ", ast.end_anchor.line, "num_newlines:", num_newlines)
+	if not ((ast.span.stop.line == num_newlines) or (ast.span.stop.line == (num_newlines + 1))) then
+		print("ast: ", ast.span.stop.line, "num_newlines:", num_newlines)
 	end
 	-- print(inspect(ast))
 
 	-- why is this even necessary??
-	return (ast.end_anchor.line == num_newlines) or (ast.end_anchor.line == (num_newlines + 1))
+	return (ast.span.stop.line == num_newlines) or (ast.span.stop.line == (num_newlines + 1))
 end
 
 local function compare_list_anchors(actual, expected)
 	if
-		(
-			expected.start_anchor.line == actual.start_anchor.line
-			and expected.start_anchor.char == actual.start_anchor.char
-		) and (expected.kind == actual.kind)
+		(expected.span.start.line == actual.span.start.line and expected.span.start.char == actual.span.start.char)
+		and (expected.kind == actual.kind)
 	then
 		if expected.kind == "list" then
 			if
 				not (
-					expected.end_anchor.line == actual.end_anchor.line
-					and expected.end_anchor.char == actual.end_anchor.char
+					expected.span.stop.line == actual.span.stop.line
+					and expected.span.stop.char == actual.span.stop.char
 				)
 			then
 				print(
 					"expected end_anchor: ",
-					expected.end_anchor,
+					expected.span.stop,
 					expected.kind,
 					" actual: ",
-					actual.end_anchor,
+					actual.span.stop,
 					actual.kind
 				)
 				return false
@@ -155,14 +166,20 @@ local function compare_list_anchors(actual, expected)
 	else
 		print(
 			"expected start_anchor: ",
-			expected.start_anchor,
+			expected.span.start,
 			expected.kind,
 			" actual: ",
-			actual.start_anchor,
+			actual.span.start,
 			actual.kind
 		)
 		return false
 	end
+end
+
+local function relevant_example_name(i)
+	local funcname = debug.getinfo(2, "Sl").currentline
+
+	return "inline_" .. funcname .. "_" .. tostring(i)
 end
 
 function testOldOpensCase()
@@ -345,8 +362,8 @@ print a; print b;
 	}
 
 	for i = 1, #example do
-		local results = format.parse(example[i], ("inline example " .. tostring(i) .. " "))
-		luaunit.assertTrue(forward_moving_cursor(results))
+		local results = format.parse(example[i], relevant_example_name(i))
+		luaunit.assertTrue(forward_moving_cursor(results, example[i]))
 		luaunit.assertTrue(samelength_testfile_list(example[i], results))
 		luaunit.assertEquals(simplify_list(results), expected[i])
 	end
@@ -388,8 +405,8 @@ function testSymbols()
 	}
 
 	for i = 1, #example do
-		local results = format.parse(example[i], ("inline example " .. tostring(i) .. " "))
-		luaunit.assertTrue(forward_moving_cursor(results))
+		local results = format.parse(example[i], relevant_example_name(i))
+		luaunit.assertTrue(forward_moving_cursor(results, example[i]))
 		luaunit.assertTrue(samelength_testfile_list(example[i], results))
 		luaunit.assertEquals(simplify_list(results), expected[i])
 	end
@@ -441,8 +458,8 @@ function testNumbers()
 	}
 
 	for i = 1, #example do
-		local results = format.parse(example[i], "inline")
-		luaunit.assertTrue(forward_moving_cursor(results))
+		local results = format.parse(example[i], relevant_example_name(i))
+		luaunit.assertTrue(forward_moving_cursor(results, example[i]))
 		luaunit.assertEquals(simplify_list(results), expected[i])
 		luaunit.assertTrue(samelength_testfile_list(example[i], results))
 	end
@@ -504,9 +521,9 @@ bar
 	}
 
 	for i = 1, #example do
-		local results = format.parse(example[i], ("inline example " .. tostring(i) .. " "))
+		local results = format.parse(example[i], relevant_example_name(i))
 		luaunit.assertEquals(simplify_list(results, true), expected[i])
-		luaunit.assertTrue(forward_moving_cursor(results))
+		luaunit.assertTrue(forward_moving_cursor(results, example[i]))
 		luaunit.assertTrue(samelength_testfile_list(example[i], results))
 	end
 end
@@ -543,7 +560,7 @@ toplevel
 	}
 
 	for i = 1, #example do
-		local results = format.parse(example[i], ("inline example " .. tostring(i) .. " "))
+		local results = format.parse(example[i], relevant_example_name(i))
 		local parsed = simplify_list(results)
 		luaunit.assertEquals(parsed, expected[i])
 		luaunit.assertTrue(samelength_testfile_list(example[i], results))
@@ -570,8 +587,8 @@ function testbracedlist()
 	}
 
 	for i = 1, #example do
-		local results = format.parse(example[i], ("inline example " .. tostring(i) .. " "))
-		luaunit.assertTrue(forward_moving_cursor(results))
+		local results = format.parse(example[i], relevant_example_name(i))
+		luaunit.assertTrue(forward_moving_cursor(results, example[i]))
 		luaunit.assertEquals(simplify_list(results), expected[i])
 		luaunit.assertTrue(samelength_testfile_list(example[i], results))
 	end
@@ -668,7 +685,7 @@ let new-results =
 	}
 
 	for i = 1, #example do
-		local results = format.parse(example[i], ("inline example " .. tostring(i) .. " "))
+		local results = format.parse(example[i], relevant_example_name(i))
 		luaunit.assertTrue(samelength_testfile_list(example[i], results))
 		luaunit.assertEquals(simplify_list(results, false), expected[i])
 	end
@@ -697,7 +714,7 @@ function testfailedparse()
 	}
 	for i = 1, #example do
 		local function assertFunction()
-			local results = format.parse(example[i], ("inline example " .. tostring(i) .. " "))
+			local results = format.parse(example[i], relevant_example_name(i))
 		end
 
 		local success, errorMessage = pcall(assertFunction)
@@ -771,7 +788,7 @@ let(
 	}
 
 	for i = 1, #example do
-		local results = format.parse(example[i], ("inline example " .. tostring(i) .. " "))
+		local results = format.parse(example[i], relevant_example_name(i))
 		-- print(inspect(results))
 		luaunit.assertEquals(simplify_list(results), expected[i])
 		luaunit.assertTrue(samelength_testfile_list(example[i], results))
@@ -865,10 +882,10 @@ hello
 	assert(#expected == #example)
 
 	for i = 1, #example do
-		local results = format.parse(example[i], ("inline example " .. tostring(i) .. " "))
+		local results = format.parse(example[i], relevant_example_name(i))
 		luaunit.assertEquals(simplify_list(results), simplify_list(expected[i]))
 		luaunit.assertTrue(compare_list_anchors(results, expected[i]))
-		luaunit.assertTrue(forward_moving_cursor(results))
+		luaunit.assertTrue(forward_moving_cursor(results, example[i]))
 		luaunit.assertTrue(samelength_testfile_list(example[i], results))
 	end
 end
@@ -942,11 +959,11 @@ return mktype]],
 	assert(#expected == #example)
 
 	for i = 1, #example do
-		local results = format.parse(example[i], ("inline example " .. tostring(i) .. " "))
+		local results = format.parse(example[i], relevant_example_name(i))
 		-- print("test# ", i)
 		-- print("results: ", inspect(results))
 		luaunit.assertEquals(simplify_list(results), expected[i])
-		luaunit.assertTrue(forward_moving_cursor(results))
+		luaunit.assertTrue(forward_moving_cursor(results, example[i]))
 		luaunit.assertTrue(samelength_testfile_list(example[i], results))
 	end
 end
