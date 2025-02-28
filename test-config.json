@@ -1,0 +1,131 @@
+{
+	"modules": {
+		"prelude": {
+			"path": "prelude.alc"
+		},
+		"tests.arith": {
+			"using": [
+				"prelude"
+			],
+			"path": "tests/arith.alc"
+		},
+		"tests.bad-types": {
+			"using": [
+				"prelude"
+			],
+			"failure_point": "termgen",
+			"path": "tests/bad-types.alc"
+		},
+		"tests.basic-annotated": {
+			"using": [
+				"prelude"
+			],
+			"path": "tests/basic-annotated.alc"
+		},
+		"tests.functypes": {
+			"using": [
+				"prelude"
+			],
+			"path": "tests/functypes.alc"
+		},
+		"tests.host-if": {
+			"using": [
+				"prelude"
+			],
+			"path": "tests/host-if.alc"
+		},
+		"tests.host-prog": {
+			"using": [
+				"prelude"
+			],
+			"path": "tests/host-prog.alc"
+		},
+		"tests.host-to-func": {
+			"using": [
+				"prelude"
+			],
+			"path": "tests/host-to-func.alc"
+		},
+		"tests.http-server": {
+			"using": [
+				"prelude"
+			],
+			"path": "tests/http-server.alc"
+		},
+		"tests.implicit": {
+			"using": [
+				"prelude"
+			],
+			"path": "tests/implicit.alc"
+		},
+		"tests.operative-do": {
+			"using": [
+				"prelude"
+			],
+			"path": "tests/operative-do.alc"
+		},
+		"tests.operative-tuple-desc": {
+			"using": [
+				"prelude"
+			],
+			"path": "tests/operative-tuple-desc.alc"
+		},
+		"tests.record-usage": {
+			"using": [
+				"prelude"
+			],
+			"path": "tests/record-usage.alc"
+		},
+		"tests.switch-fail": {
+			"using": [
+				"prelude"
+			],
+			"failure_point": "termgen",
+			"path": "tests/switch-fail.alc"
+		},
+		"tests.switch-test": {
+			"using": [
+				"prelude"
+			],
+			"path": "tests/switch-test.alc"
+		},
+		"tests.test-failure": {
+			"using": [
+				"prelude"
+			],
+			"failure_point": "termgen",
+			"path": "tests/test-failure.alc"
+		},
+		"tests.test-success": {
+			"using": [
+				"prelude"
+			],
+			"path": "tests/test-success.alc"
+		},
+		"tests.tuples": {
+			"using": [
+				"prelude"
+			],
+			"path": "tests/tuples.alc"
+		}
+	},
+	"tests": [
+		"tests.test-success",
+		"tests.test-failure",
+		"tests.arith",
+		"tests.bad-types",
+		"tests.basic-annotated",
+		"tests.functypes",
+		"tests.host-if",
+		"tests.host-prog",
+		"tests.host-to-func",
+		"tests.http-server",
+		"tests.implicit",
+		"tests.operative-do",
+		"tests.operative-tuple-desc",
+		"tests.record-usage",
+		"tests.switch-fail",
+		"tests.switch-test",
+		"tests.tuples"
+	]
+}

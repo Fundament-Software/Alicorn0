@@ -53,7 +53,7 @@ SPDX-License-Identifier = "MIT"
 
 # Source/data files that we can't comment in.
 [[annotations]]
-path = "testlist.json"
+path = "test-config.json"
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2025 Fundament Software SPC <https://fundament.software>"
 SPDX-License-Identifier = "Apache-2.0"

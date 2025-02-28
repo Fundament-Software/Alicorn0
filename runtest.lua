@@ -24,7 +24,7 @@ end
 --local endTime = os.time() + 3
 --while os.time() < endTime do end
 
-require "pretty-printer" -- has side-effect of loading global p()
+local pretty_printer = require "pretty-printer" -- has side-effect of loading global p()
 
 local startTime = os.clock()
 local checkpointTime = startTime
@@ -58,7 +58,6 @@ else
 	interpreter_argv = { [0] = "lua" }
 	argv = { [0] = "runtest.lua" }
 end
-local test_harness = true
 local print_src = false
 local print_ast = false
 local print_inferrable = false
@@ -70,8 +69,8 @@ local profile_file = ""
 -- "match", "infer" are currently implemented
 local profile_what = ""
 local reload_mode = false
-local test_single = false
-local test_name = ""
+---@type nil | string[]
+local explicit_tests = nil
 local print_usage = false
 local short_opts = {
 	["S"] = function(_opt_repr)
@@ -91,7 +90,10 @@ local short_opts = {
 	end,
 	["r:"] = function(opt_repr, arg)
 		reload_mode = true
-		test_name = arg
+		if explicit_tests == nil then
+			explicit_tests = {}
+		end
+		table.insert(explicit_tests, arg)
 	end,
 	["p:"] = function(opt_repr, arg)
 		profile_run = true
@@ -107,8 +109,10 @@ local short_opts = {
 		profile_what = subargs[2] or "match"
 	end,
 	["T:"] = function(opt_repr, arg)
-		test_single = true
-		test_name = arg
+		if explicit_tests == nil then
+			explicit_tests = {}
+		end
+		table.insert(explicit_tests, arg)
 	end,
 	["?"] = function(_opt_repr)
 		print_usage = true
@@ -134,7 +138,7 @@ local long_opts = {
 local first_operand = getopt(argv, short_opts, long_opts)
 
 if print_usage then
-	local usage = [=[Usage: %s [-Sfstv] [(-p|-P) <file>[,<what>]] [-T <test>]
+	local usage = [=[Usage: %s [-Sfstv] [(-p|-P) <file>[,<what>]] [-T <module>]
   -S, --print-source
           Print the Alicorn source code about to be tested.
           (mnemonic: Source)
@@ -164,10 +168,10 @@ if print_usage then
   -P <file>[,<what>]
           Like -p, but enable outputting a flamegraph-compatible trace.
           (mnemonic: Phlame! :P)
-  -T, --test <file>
+  -T, --test <module>
           Choose a specific test to run.
           (mnemonic: Test)
-          Without -T, all tests in testlist.json are run.
+          Without -T, all tests in test-config.json are run.
 ]=]
 	io.stderr:write(usage:format(argv[0]))
 	os.exit()
@@ -183,10 +187,144 @@ if profile_run then
 	io.write("Profile what : ", profile_what, "\n")
 end
 
-local prelude = "prelude.alc"
+---@class (exact) runtest.test_config
+---@field modules {path: runtest.test_config.module}
+---@field tests string[]
 
----@enum failurepoint
-local failurepoint = {
+---@class (exact) runtest.test_config.module
+---@field failure_point? failure_point
+---@field path string
+---@field using? string[]
+
+local test_config_file, err = io.open("test-config.json")
+if not test_config_file then
+	error(err)
+end
+local test_config, pos, err = json.decode(test_config_file:read("a"), 1, nil)
+if err ~= nil then
+	error(("error decoding test-config.json: %s"):format(err))
+end
+---@cast test_config runtest.test_config
+
+---@type {[string]: true}
+local explicit_test_set = {}
+if explicit_tests then
+	local test_modules = test_config.modules
+	for _, explicit_test in ipairs(explicit_tests) do
+		local test_module = test_modules[explicit_test]
+		if test_module == nil then
+			error(("unknown module explicitly requested: %s"):format(explicit_test))
+		end
+		explicit_test_set[explicit_test] = true
+	end
+end
+
+---@private
+---@class (exact) runtest._module_tree
+---@field name string
+---@field child_names string[]
+---@field ancestors {[string]: integer}
+---@field explicit boolean
+
+---@type {[string]: runtest._module_tree}
+local module_trees = {}
+---@type string[]
+local module_forest = {}
+do
+	local test_modules = test_config.modules
+	---@type runtest._module_tree[]
+	local queued_module_trees = {}
+	---@param module_name string
+	---@param explicit boolean
+	---@return runtest._module_tree module_tree
+	local function add_module(module_name, explicit)
+		local module_tree = { name = module_name, child_names = {}, ancestors = {}, explicit = explicit }
+		module_trees[module_name] = module_tree
+		table.insert(queued_module_trees, module_tree)
+		return module_tree
+	end
+	if explicit_tests ~= nil then
+		for _, explicit_test in ipairs(explicit_tests) do
+			add_module(explicit_test, true)
+		end
+	else
+		for _, test in ipairs(test_config.tests) do
+			add_module(test, true)
+		end
+	end
+	for _, module_tree in ipairs(queued_module_trees) do
+		local module_name = module_tree.name
+		local module = test_modules[module_name]
+		if module == nil then
+			error(("unknown module requested: %s"):format(module_name))
+		end
+		local module_using = module.using
+		local is_root_module = module_using == nil or #module_using == 0
+		if is_root_module then
+			table.insert(module_forest, module_name)
+		else
+			---@cast module_using -nil
+			for _, used_module_name in ipairs(module_using) do
+				local used_module_tree = module_trees[used_module_name]
+				if used_module_tree == nil then
+					used_module_tree = add_module(used_module_name, false)
+				end
+				table.insert(used_module_tree.child_names, module_name)
+				module_tree.ancestors[used_module_name] = (module_tree.ancestors[used_module_name] or 0) + 1
+				print(module_name, "ancestor", module_tree.ancestors[used_module_name], used_module_name)
+			end
+		end
+	end
+	---@param module_tree runtest._module_tree
+	local function record_ancestors(module_tree)
+		if module_tree.ancestors[module_tree.name] ~= nil then
+			error(
+				("module cycle found: %s, ancestors %s"):format(
+					module_tree.name,
+					pretty_printer.s(module_tree.ancestors)
+				)
+			)
+		end
+		local i = 1
+		while i <= #module_tree.child_names do
+			for ancestor_module_name, _ in pairs(module_tree.ancestors) do
+				module_trees[module_tree.child_names[i]].ancestors[ancestor_module_name] = (
+					module_trees[module_tree.child_names[i]].ancestors[ancestor_module_name] or 0
+				) + 1
+				print(
+					module_tree.child_names[i],
+					"ancestor",
+					module_trees[module_tree.child_names[i]].ancestors[ancestor_module_name],
+					ancestor_module_name
+				)
+			end
+			-- module_trees[module_tree.child_names[i]].ancestors[module_tree.name] = (module_trees[module_tree.child_names[i]].ancestors[module_tree.name] or 0) + 1
+			-- print(module_tree.child_names[i], "ancestor", module_trees[module_tree.child_names[i]].ancestors[module_tree.name], module_tree.name)
+			record_ancestors(module_trees[module_tree.child_names[i]])
+			i = i + 1
+		end
+	end
+	for _, module_name in ipairs(module_forest) do
+		record_ancestors(module_trees[module_name])
+	end
+	local function finish_module_tree(module_tree)
+		local i = 1
+		while i <= #module_tree.child_names do
+			if module_trees[module_tree.child_names[i]].ancestors[module_tree.name] > 1 then
+				table.remove(module_tree.child_names, i)
+			else
+				finish_module_tree(module_trees[module_tree.child_names[i]])
+				i = i + 1
+			end
+		end
+	end
+	for _, module_name in ipairs(module_forest) do
+		finish_module_tree(module_trees[module_name])
+	end
+end
+
+---@enum failure_point
+local failure_point = {
 	parsing = "parsing",
 	termgen = "termgen",
 	typechecking = "typechecking",
@@ -195,11 +333,17 @@ local failurepoint = {
 	success = "success",
 }
 
+---@alias runtest.failure_execution_control
+---| "break" break loop
+---| "continue" continue loop
+---| "stop" stop execution
+---@alias runtest.execution_control "proceed" | runtest.failure_execution_control
+
 ---@param name string
 ---@param env Environment
 ---@param log function
----@return boolean
----@return failurepoint | anchored_inferrable
+---@return nil | failure_point
+---@return nil | anchored_inferrable
 ---@return nil | Environment
 local function load_alc_file(name, env, log)
 	local src_file, err = io.open(name)
@@ -222,7 +366,7 @@ local function load_alc_file(name, env, log)
 
 	if not ok then
 		log(code) -- error
-		return false, failurepoint.parsing
+		return failure_point.parsing
 	end
 
 	checkpointTime = os.clock()
@@ -256,15 +400,15 @@ local function load_alc_file(name, env, log)
 		checkpointTime = os.clock()
 		log(("Evaluating failed in %.3f seconds"):format(checkpointTime - checkpointTime2))
 		log(expr)
-		return false, failurepoint.termgen
+		return failure_point.termgen
 	end
-	return true, expr, env
+	return nil, expr, env
 end
 
 ---@param bound_expr anchored_inferrable
 ---@param log function
 ---@param env Environment
----@return failurepoint
+---@return failure_point
 local function execute_alc_file(bound_expr, log, env)
 	checkpointTime = os.clock()
 	log(("Got a term! in %.3f seconds"):format(checkpointTime - checkpointTime2))
@@ -288,7 +432,7 @@ local function execute_alc_file(bound_expr, log, env)
 
 	if not ok then
 		log(type) -- error
-		return failurepoint.typechecking
+		return failure_point.typechecking
 	end
 
 	if profile_run and profile_what == "infer" then
@@ -334,7 +478,7 @@ local function execute_alc_file(bound_expr, log, env)
 
 	if not ok then
 		log(err)
-		return failurepoint.typechecking
+		return failure_point.typechecking
 	end
 
 	log("Evaluating")
@@ -344,7 +488,7 @@ local function execute_alc_file(bound_expr, log, env)
 
 	if not ok then
 		log(result)
-		return failurepoint.evaluating
+		return failure_point.evaluating
 	end
 
 	checkpointTime = os.clock()
@@ -362,7 +506,7 @@ local function execute_alc_file(bound_expr, log, env)
 
 	if not ok then
 		log(result_exec) -- error
-		return failurepoint.executing
+		return failure_point.executing
 	end
 
 	checkpointTime = os.clock()
@@ -373,10 +517,11 @@ local function execute_alc_file(bound_expr, log, env)
 
 	log(("Runtest succeeded in %.3f seconds"):format(checkpointTime - startTime))
 
-	return failurepoint.success
+	return failure_point.success
 end
 
--- local graph_backtrace = 5
+local graph_backtrace = nil
+-- graph_backtrace = 5
 local internal_state
 
 local function dump_edges(edge_list)
@@ -437,13 +582,69 @@ local function serialize_graph(name)
 	f:close()
 end
 
-local env = base_env.create()
+---@module "_meta/runtest/execute_module_forest"
+local execute_module_forest
 
-local prelude_env, env = env:enter_block(terms.block_purity.effectful)
+---@param module_tree runtest._module_tree
+---@param env Environment
+---@param log function
+---@param on_success fun(module_tree: runtest._module_tree, expr_failure_point: failure_point, expr: (anchored_inferrable | nil), expr_env: Environment): (control: runtest.execution_control)
+---@param on_failure fun(module_tree: runtest._module_tree, expr_failure_point: failure_point, expr: (anchored_inferrable | nil), expr_env: Environment): (control: runtest.failure_execution_control)
+---@return runtest.execution_control control
+local function execute_module_tree(module_tree, env, log, on_success, on_failure)
+	-- local log = ""
+	-- local print_repl = function(...)
+	-- 	---@type string[]
+	-- 	local args = {}
 
-local ok, expr, env = load_alc_file(prelude, env, print)
-if not ok then
-	if graph_backtrace ~= nil then
+	-- 	for i = 1, select('#', ...) do
+	-- 		args[i] = tostring(select(i, ...))
+	-- 	end
+
+	-- 	log = log .. table.concat(args, " ") .. "\n"
+	-- end
+	local module = test_config.modules[module_tree.name]
+	local expr_shadowed_env, expr_env = env:enter_block(terms.block_purity.effectful)
+	---@diagnostic disable-next-line: no-unknown
+	local expr
+	do
+		local expr_failure_point, new_expr, new_expr_env = load_alc_file(module.path, expr_env, log)
+		if expr_failure_point ~= nil then
+			if module.failure_point == expr_failure_point then
+				local control = on_success(module_tree, expr_failure_point, expr, expr_env)
+				-- io.write(
+				-- 	U.outputGreen(
+				-- 		("success: %s stopped at %s: %s"):format(module_tree.name, expr_failure_point, tostring(expr))
+				-- 	),
+				-- 	"\n"
+				-- )
+				if control ~= "proceed" then
+					return control
+				end
+			else
+				local control = on_failure(module_tree, expr_failure_point, expr, expr_env)
+				-- io.write(
+				-- 	"\n\n",
+				-- 	U.outputRed(
+				-- 		("failure: %s stopped at %s (expected %s): %s"):format(
+				-- 			module_tree.name,
+				-- 			expr_failure_point,
+				-- 			module.failure_point,
+				-- 			tostring(expr)
+				-- 		)
+				-- 	),
+				-- 	"\n",
+				-- 	log,
+				-- 	"\n\n"
+				-- )
+				return control
+			end
+		end
+		---@cast new_expr -nil
+		---@cast new_expr_env -nil
+		expr, expr_env = new_expr, new_expr_env
+	end
+	if module_tree.name == "prelude" and graph_backtrace ~= nil then
 		local snapshots = internal_state.snapshot_buffer
 		local i = (internal_state.snapshot_count + 1) % graph_backtrace
 		local slice = {}
@@ -456,9 +657,83 @@ if not ok then
 				slice[v] = v
 			end
 		end
+		return "stop"
 	end
+	---@diagnostic disable-next-line: no-unknown
+	local _expr_purity
+	expr_env, expr, _expr_purity = env:exit_block(expr, expr_shadowed_env)
+	do
+		local expr_failure_point = execute_alc_file(expr, log, expr_env)
+		if module.failure_point == expr_failure_point then
+			local control = on_success(module_tree, expr_failure_point, expr, expr_env)
+			-- io.write(
+			-- 	U.outputGreen(
+			-- 		("success: %s stopped at %s"):format(module_tree.name, expr_failure_point)
+			-- 	),
+			-- 	"\n"
+			-- )
+			if control ~= "proceed" then
+				return control
+			end
+		else
+			local control = on_failure(module_tree, expr_failure_point, expr, expr_env)
+			-- io.write(
+			-- 	"\n\n",
+			-- 	U.outputRed(
+			-- 		("failure: %s stopped at %s (expected %s)"):format(
+			-- 			module_tree.name,
+			-- 			expr_failure_point,
+			-- 			module.failure_point,
+			-- 		)
+			-- 	),
+			-- 	"\n",
+			-- 	log,
+			-- 	"\n\n"
+			-- )
+			return control
+		end
+	end
+	return execute_module_forest(module_tree.child_names, expr_env, log, on_success, on_failure)
+end
 
-	return
+---@module "_meta/runtest/execute_module_forest"
+function execute_module_forest(
+	---@diagnostic disable-next-line: redefined-local
+	module_forest,
+	env
+)
+	local control = nil
+	local module_forest_length = #module_forest
+	for i = 1, module_forest_length do
+		if i < module_forest_length then
+			-- We do not attempt to capture errors here because no test should cause an internal compiler error, only recoverable errors.
+			-- If a shadowing error occurs, it means a test caused an internal compiler error that was captured by the syntax that left
+			-- the tests in a bad state.
+			evaluator.typechecker_state:speculate(function()
+				control = execute_module_tree(module_trees[module_forest[i]], env, log, on_success, on_failure)
+				return false
+			end)
+		else
+			control = execute_module_tree(module_trees[module_forest[i]], env, log, on_success, on_failure)
+		end
+		if control == "break" or control == "stop" then
+			break
+		end
+	end
+	if control == "stop" then
+		return control
+	end
+	return "proceed"
+end
+
+local env = base_env.create()
+
+local prelude_module = test_config.modules["prelude"]
+
+local prelude_env, env = env:enter_block(terms.block_purity.effectful)
+
+local ok, expr, env = load_alc_file(prelude_module.path, env, print)
+if not ok then
 end
 
 ---@cast expr anchored_inferrable
@@ -522,78 +797,69 @@ local function perform_test(file, completion, env)
 end
 
 if reload_mode then
+	---@cast explicit_tests -nil
 	while true do
-		print("Loading " .. test_name)
-		evaluator.typechecker_state:speculate(function()
-			local shadowed, test_env = env:enter_block(terms.block_purity.effectful)
-			local ok, test_expr, test_env = load_alc_file(test_name, test_env, print)
-
-			if ok then
-				---@cast test_expr anchored_inferrable
-				---@cast test_env Environment
-				local test_env, test_expr, _ = test_env:exit_block(test_expr, shadowed)
-
-				local ok = execute_alc_file(test_expr, print, test_env)
-			end
-
-			return false
-		end)
-
-		print("Continue? y/n: ")
-		if io.read(1) == "n" then
-			return
-		end
-	end
-end
-
-if test_harness then
-	local test_list_file, err = io.open("testlist.json")
-	if not test_list_file then
-		error(err)
-	end
-	local test_list, pos, err = json.decode(test_list_file:read("a"), 1, nil)
-	---@cast test_list table
-
-	if err ~= nil then
-		print("Couldn't decode JSON describing tests! " .. tostring(err))
-		return
-	end
-
-	---@type { [string]: string }
-	local logs = {}
-	local total = 0
-	local failures = {}
-
-	for file, completion in pairs(test_list) do
-		if (not test_single) or (test_single and file == test_name) then
-			total = total + 1
-
-			-- We do not attempt to capture errors here because no test should cause an internal compiler error, only recoverable errors.
-			-- If a shadowing error occurs, it means a test caused an internal compiler error that was captured by the syntax that left
-			-- the tests in a bad state.
+		for _, test_module_name in ipairs(explicit_tests) do
+			print("Loading " .. test_module_name)
 			evaluator.typechecker_state:speculate(function()
-				local ok, log = perform_test(file, completion, env)
+				local shadowed, test_env = env:enter_block(terms.block_purity.effectful)
+				local ok, test_expr, test_env = load_alc_file(test_path, test_env, print)
 
-				logs[file] = log
-				if not ok then
-					U.append(failures, file)
+				if ok then
+					---@cast test_expr anchored_inferrable
+					---@cast test_env Environment
+					local test_env, test_expr, _ = test_env:exit_block(test_expr, shadowed)
+
+					local ok = execute_alc_file(test_expr, print, test_env)
 				end
 
 				return false
 			end)
-		end
-	end
 
-	if #failures == 0 then
-		io.write("All " .. tostring(total) .. " tests passed!\n")
-	else
-		io.write(tostring(total - #failures) .. " out of " .. tostring(total) .. " tests passed. Failures:\n")
-		for _, v in ipairs(failures) do
-			io.write("- " .. v .. "\n")
+			print("Continue? y/n: ")
+			if io.read(1) == "n" then
+				return
+			end
 		end
 	end
+end
+
+if err ~= nil then
+	print("Couldn't decode JSON describing tests! " .. tostring(err))
+	return
+end
+
+---@type { [string]: string }
+local logs = {}
+local total = 0
+local failures = {}
+
+for _i, test_name in ipairs(test_config.tests) do
+	local test_module = test_config.modules[test_name]
+	if explicit_tests == nil or explicit_test_set[test_module.path] then
+		total = total + 1
+
+		-- We do not attempt to capture errors here because no test should cause an internal compiler error, only recoverable errors.
+		-- If a shadowing error occurs, it means a test caused an internal compiler error that was captured by the syntax that left
+		-- the tests in a bad state.
+		evaluator.typechecker_state:speculate(function()
+			local ok, log = perform_test(test_module.path, test_module.failure_point or failure_point.success, env)
+
+			logs[test_module.path] = log
+			if not ok then
+				U.append(failures, test_module.path)
+			end
+
+			return false
+		end)
+	end
+end
+
+if #failures == 0 then
+	io.write("All " .. tostring(total) .. " tests passed!\n")
 else
-	local env, bound_expr, purity = env:exit_block(expr, prelude_env)
-
-	execute_alc_file(bound_expr, print)
+	io.write(tostring(total - #failures) .. " out of " .. tostring(total) .. " tests passed. Failures:\n")
+	for _, v in ipairs(failures) do
+		io.write("- " .. v .. "\n")
+	end
 end
