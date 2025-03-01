@@ -433,8 +433,9 @@ end
 ---@overload fun() : boolean, string
 ---@param env Environment
 ---@param metaval flex_value
+---@param span Span
 ---@return boolean, flex_value
-local function speculate_pi_type(env, metaval)
+local function speculate_pi_type(env, metaval, span)
 	-- FIXME: There is a way to avoid this combinatoric explosion that nobody has properly explained yet. If this gets too big, we need to do it properly.
 	local pairs = {
 		{ param_info = param_info_implicit, result_info = result_info_pure },
@@ -533,7 +534,7 @@ local function operative_test_hack(env, metaval)
 	end
 end
 
----@param start_anchor Anchor
+---@param span Span
 ---@param type_of_term flex_value
 ---@param usage_count ArrayValue<integer>
 ---@param term typed
@@ -543,7 +544,7 @@ end
 ---@return tristate
 ---@return (string|checkable|anchored_inferrable|flex_value)
 ---@return Environment?
-local function call_operative(start_anchor, type_of_term, usage_count, term, sargs, goal, env)
+local function call_operative(span, type_of_term, usage_count, term, sargs, goal, env)
 	-- TODO: speculate operative type
 	local ok
 	ok, type_of_term = operative_test_hack(env, type_of_term)
@@ -605,7 +606,7 @@ local function call_operative(start_anchor, type_of_term, usage_count, term, sar
 			U.notail(
 				checkable_term.inferrable(
 					anchored_inferrable_term(
-						start_anchor,
+						span,
 						unanchored_inferrable_term.typed(
 							evaluator.substitute_placeholders_identity(goal_type, env.typechecking_context),
 							usage_counts,
@@ -623,7 +624,7 @@ local function call_operative(start_anchor, type_of_term, usage_count, term, sar
 		return terms.tristate.success,
 			U.notail(
 				anchored_inferrable_term(
-					start_anchor,
+					span,
 					unanchored_inferrable_term.typed(
 						evaluator.substitute_placeholders_identity(resulting_type, env.typechecking_context),
 						usage_counts,
@@ -637,7 +638,7 @@ local function call_operative(start_anchor, type_of_term, usage_count, term, sar
 	end
 end
 
----@param start_anchor Anchor
+---@param span Span
 ---@param type_of_term flex_value
 ---@param usage_count ArrayValue<integer>
 ---@param term typed
@@ -647,9 +648,9 @@ end
 ---@return tristate
 ---@return string|checkable|anchored_inferrable|flex_value
 ---@return Environment?
-local function call_pi(start_anchor, type_of_term, usage_count, term, sargs, goal, env)
+local function call_pi(span, type_of_term, usage_count, term, sargs, goal, env)
 	local ok
-	ok, type_of_term = speculate_pi_type(env, type_of_term)
+	ok, type_of_term = speculate_pi_type(env, type_of_term, span)
 	if not ok then
 		return terms.tristate.continue, type_of_term
 	end
@@ -665,7 +666,7 @@ local function call_pi(start_anchor, type_of_term, usage_count, term, sargs, goa
 
 		local metavar = evaluator.typechecker_state:metavariable(env.typechecking_context)
 		local metaresult = evaluator.apply_value(result_type, metavar:as_flex(), env.typechecking_context)
-		local ok, inner_pi = speculate_pi_type(env, metaresult)
+		local ok, inner_pi = speculate_pi_type(env, metaresult, span)
 
 		if not ok then
 			error(
@@ -694,11 +695,11 @@ local function call_pi(start_anchor, type_of_term, usage_count, term, sargs, goa
 
 	---@type string | anchored_inferrable | checkable
 	local res = anchored_inferrable_term(
-		start_anchor,
+		span,
 		unanchored_inferrable_term.application(
 
 			anchored_inferrable_term(
-				start_anchor,
+				span,
 				unanchored_inferrable_term.typed(
 					evaluator.substitute_placeholders_identity(type_of_term, env.typechecking_context),
 					usage_count,
@@ -712,7 +713,7 @@ local function call_pi(start_anchor, type_of_term, usage_count, term, sargs, goa
 
 	if result_info:unwrap_result_info():unwrap_result_info():is_effectful() then
 		local bind = terms.binding.program_sequence(res, sargs.span.start)
-		ok, env = env:bind_local(bind)
+		ok, env = env:bind_local(span, bind)
 		if not ok then
 			return terms.tristate.failure, env
 		end
@@ -729,7 +730,7 @@ local function call_pi(start_anchor, type_of_term, usage_count, term, sargs, goa
 	return terms.tristate.success, res, env
 end
 
----@param start_anchor Anchor
+---@param span Span
 ---@param type_of_term_input flex_value
 ---@param usage_count ArrayValue<integer>
 ---@param term typed
@@ -739,7 +740,7 @@ end
 ---@return tristate
 ---@return string|checkable|anchored_inferrable
 ---@return Environment?
-local function call_host_func_type(start_anchor, type_of_term_input, usage_count, term, sargs, goal, env)
+local function call_host_func_type(span, type_of_term_input, usage_count, term, sargs, goal, env)
 	local ok, type_of_term = evaluator.typechecker_state:speculate(function()
 		local param_mv = evaluator.typechecker_state:metavariable(env.typechecking_context)
 		local result_mv = evaluator.typechecker_state:metavariable(env.typechecking_context)
@@ -824,7 +825,7 @@ local function call_host_func_type(start_anchor, type_of_term_input, usage_count
 			env.typechecking_context
 		)
 		local app = anchored_inferrable_term(
-			start_anchor,
+			span,
 			unanchored_inferrable_term.typed(
 
 				evaluator.substitute_placeholders_identity(result_final, env.typechecking_context),
@@ -836,7 +837,7 @@ local function call_host_func_type(start_anchor, type_of_term_input, usage_count
 			)
 		)
 		local bind = terms.binding.program_sequence(app, sargs.span.start)
-		ok, env = env:bind_local(bind)
+		ok, env = env:bind_local(span, bind)
 		if not ok then
 			return terms.tristate.failure, env
 		end
@@ -847,10 +848,10 @@ local function call_host_func_type(start_anchor, type_of_term_input, usage_count
 		---@cast res anchored_inferrable
 	else
 		res = anchored_inferrable_term(
-			start_anchor,
+			span,
 			unanchored_inferrable_term.application(
 				anchored_inferrable_term(
-					start_anchor,
+					span,
 					unanchored_inferrable_term.typed(
 						evaluator.substitute_placeholders_identity(type_of_term, env.typechecking_context),
 						usage_count,
@@ -944,7 +945,7 @@ local function expression_pairhandler(args, a, b)
 	local res_term1, res_term2, res_term3, res_env
 
 	local ok
-	ok, res_term1, res_env = call_operative(a.span.start, type_of_term, usage_count, term, sargs, goal, env)
+	ok, res_term1, res_env = call_operative(a.span, type_of_term, usage_count, term, sargs, goal, env)
 	if ok:is_success() then
 		return true, res_term1, res_env
 	elseif ok:is_failure() then
@@ -952,7 +953,7 @@ local function expression_pairhandler(args, a, b)
 		--error("call_operative failed!\n" .. tostring(res_term1) .. "\n" .. type_of_term:pretty_print())
 	end
 
-	ok, res_term2, res_env = call_pi(a.span.start, type_of_term, usage_count, term, sargs, goal, env)
+	ok, res_term2, res_env = call_pi(a.span, type_of_term, usage_count, term, sargs, goal, env)
 	if ok:is_success() then
 		return true, res_term2, res_env
 	elseif ok:is_failure() then
@@ -960,7 +961,7 @@ local function expression_pairhandler(args, a, b)
 		--error("call_pi failed!\n" .. tostring(res_term2) .. "\n" .. type_of_term:pretty_print())
 	end
 
-	ok, res_term3, res_env = call_host_func_type(a.span.start, type_of_term, usage_count, term, sargs, goal, env)
+	ok, res_term3, res_env = call_host_func_type(a.span, type_of_term, usage_count, term, sargs, goal, env)
 	if ok:is_success() then
 		return true, res_term3, res_env
 	elseif ok:is_failure() then
@@ -1088,13 +1089,13 @@ local function expression_symbolhandler(args, name)
 			local debug_id = terms.spanned_name(namearray.str, namearray.span)
 
 			part = anchored_inferrable_term(
-				name.span.start,
+				name.span,
 				unanchored_inferrable_term.record_elim(
 					part,
 					name_array(namearray.str),
 					spanned_name_array(debug_id),
 					anchored_inferrable_term(
-						name.span.start,
+						name.span,
 						unanchored_inferrable_term.bound_variable(env.typechecking_context:len() + 1, debug_id)
 					)
 				)
@@ -1134,7 +1135,7 @@ local function expression_valuehandler(args, val)
 		return true,
 			U.notail(
 				anchored_inferrable_term(
-					val.span.start,
+					val.span,
 					unanchored_inferrable_term.typed(
 						terms.typed_term.literal(strict_value.host_number_type),
 						usage_array(),
@@ -1148,7 +1149,7 @@ local function expression_valuehandler(args, val)
 		return true,
 			U.notail(
 				anchored_inferrable_term(
-					val.span.start,
+					val.span,
 					unanchored_inferrable_term.typed(
 						terms.typed_term.literal(strict_value.host_string_type),
 						usage_array(),
@@ -1332,7 +1333,7 @@ local function host_operative(fn, name)
 	local userdata_type = strict_value.tuple_type(terms.empty:unwrap_strict())
 	return U.notail(
 		anchored_inferrable_term(
-			format.anchor_here(2),
+			format.span_here(2),
 			unanchored_inferrable_term.typed(
 
 				terms.typed_term.literal(strict_value.operative_type(value_fn, userdata_type)),
@@ -1387,7 +1388,7 @@ collect_tuple = metalanguage.reducer(
 		local goal_type, collected_terms
 		local desc = terms.empty
 
-		local start_anchor = syntax.span.start
+		local span = syntax.span
 
 		if goal:is_check() then
 			collected_terms = array(checkable_term)()
@@ -1458,7 +1459,7 @@ collect_tuple = metalanguage.reducer(
 			return true,
 				U.notail(
 					anchored_inferrable_term(
-						start_anchor,
+						span,
 						unanchored_inferrable_term.tuple_cons(collected_terms, collected_info)
 					)
 				),
@@ -1509,6 +1510,8 @@ collect_host_tuple = metalanguage.reducer(
 		local goal_type, collected_terms
 		local desc = terms.empty
 		local collected_debug = spanned_name_array()
+
+		local span = syntax.span
 
 		if goal:is_check() then
 			collected_terms = array(checkable_term)()
@@ -1578,7 +1581,7 @@ collect_host_tuple = metalanguage.reducer(
 			return true,
 				U.notail(
 					anchored_inferrable_term(
-						syntax.span.start,
+						syntax.span,
 						unanchored_inferrable_term.host_tuple_cons(collected_terms, collected_debug)
 					)
 				),
@@ -1639,7 +1642,7 @@ local block = metalanguage.reducer(
 		end
 
 		local lastval = anchored_inferrable_term(
-			syntax.span.start,
+			syntax.span,
 			unanchored_inferrable_term.tuple_cons(anchored_inferrable_term_array(), spanned_name_array())
 		)
 
@@ -1709,7 +1712,7 @@ local top_level_block = metalanguage.reducer(
 			error("NYI non-infer cases for block")
 		end
 		local lastval = anchored_inferrable_term(
-			syntax.span.start,
+			syntax.span,
 			unanchored_inferrable_term.tuple_cons(anchored_inferrable_term_array(), spanned_name_array())
 		)
 		local newval
@@ -1814,7 +1817,7 @@ local function host_applicative(fn, params, results)
 	)
 	return U.notail(
 		anchored_inferrable_term(
-			format.anchor_here(2),
+			format.span_here(2),
 			unanchored_inferrable_term.typed(terms.typed_term.literal(host_fn_type), usage_array(), literal_host_fn)
 		)
 	)

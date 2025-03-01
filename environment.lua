@@ -93,9 +93,10 @@ local function log_binding(name, type, value)
 end
 
 ---@overload fun(binding: binding) : boolean, string
+---@param span Span
 ---@param binding binding
 ---@return boolean, Environment
-function environment:bind_local(binding)
+function environment:bind_local(span, binding)
 	--print("bind_local: (binding term follows)")
 	--print(binding:pretty_print(self.typechecking_context))
 	if not self.purity:is_pure() and not self.purity:is_effectful() then
@@ -104,7 +105,6 @@ function environment:bind_local(binding)
 	local typechecking_context = self.typechecking_context
 	if binding:is_let() then
 		local name, debuginfo, anchored_expr = binding:unwrap_let()
-		local anchor, _ = anchored_expr:unwrap_anchored_inferrable()
 		local ok, expr_type, expr_usages, expr_term = infer(anchored_expr, typechecking_context)
 		if not ok then
 			---@cast expr_type string
@@ -112,11 +112,11 @@ function environment:bind_local(binding)
 		end
 		---@cast expr_type -string
 		if terms.flex_value.value_check(expr_type) ~= true then
-			print("expr", expr)
+			print("expr", anchored_expr)
 			error("infer returned a bad type for expr in bind_local")
 		end
 		local n = typechecking_context:len()
-		local term = anchored_inferrable_term(anchor, unanchored_inferrable_term.bound_variable(n + 1, debuginfo))
+		local term = anchored_inferrable_term(span, unanchored_inferrable_term.bound_variable(n + 1, debuginfo))
 		local locals = self.locals:put(name, term)
 		local evaled = evaluator.evaluate(expr_term, typechecking_context.runtime_context, typechecking_context)
 
@@ -136,7 +136,6 @@ function environment:bind_local(binding)
 			}))
 	elseif binding:is_tuple_elim() then
 		local names, infos, subject = binding:unwrap_tuple_elim()
-		local anchor, _ = subject:unwrap_anchored_inferrable()
 		local ok, subject_type, subject_usages, subject_term = infer(subject, typechecking_context)
 		if not ok then
 			---@cast subject_type string
@@ -209,8 +208,7 @@ function environment:bind_local(binding)
 				-- if constructor ~= "cons" then
 				-- 	error("todo: this error message")
 				-- end
-				local term =
-					anchored_inferrable_term(anchor, unanchored_inferrable_term.bound_variable(n + i, infos[i]))
+				local term = anchored_inferrable_term(span, unanchored_inferrable_term.bound_variable(n + i, infos[i]))
 				locals = locals:put(v, term)
 
 				local evaled = evaluator.index_tuple_value(subject_value, i)
@@ -261,7 +259,7 @@ function environment:bind_local(binding)
 		local locals = self.locals:put(
 			param_name,
 			anchored_inferrable_term(
-				start_anchor,
+				span,
 				unanchored_inferrable_term.bound_variable(typechecking_context:len() + 1, info)
 			)
 		)
@@ -298,8 +296,8 @@ function environment:bind_local(binding)
 
 		--print("FOUND EFFECTFUL BINDING", first_result_type, "produced by ", first_type)
 		local n = typechecking_context:len()
-		local debuginfo = spanned_name("#program_sequence", start_anchor:span(start_anchor))
-		local term = anchored_inferrable_term(start_anchor, unanchored_inferrable_term.bound_variable(n + 1, debuginfo))
+		local debuginfo = spanned_name("#program_sequence", span) -- TODO: fix this
+		local term = anchored_inferrable_term(span, unanchored_inferrable_term.bound_variable(n + 1, debuginfo))
 		local locals = self.locals:put("#program-sequence", term)
 		typechecking_context = typechecking_context:append("#program-sequence", first_result_type, nil, debuginfo)
 		local bindings = self.bindings:append(binding)
@@ -410,9 +408,9 @@ function environment:exit_block(term, shadowed)
 
 	---@type anchored_inferrable
 	local wrapped = term
-	local anchor, _ = term:unwrap_anchored_inferrable()
+	local span, _ = term:unwrap_anchored_inferrable()
 	if purity:is_effectful() then
-		wrapped = anchored_inferrable_term(anchor, unanchored_inferrable_term.program_end(wrapped))
+		wrapped = anchored_inferrable_term(span, unanchored_inferrable_term.program_end(wrapped))
 	end
 	for idx = self.bindings:len(), 1, -1 do
 		---@type binding
@@ -438,13 +436,13 @@ function environment:exit_block(term, shadowed)
 				first,
 				start_anchor,
 				wrapped,
-				spanned_name("#program-sequence", start_anchor:span(start_anchor))
+				spanned_name("#program-sequence", span) --TODO: FIX THIS!!
 			)
 		else
 			error("exit_block: unknown kind: " .. binding.kind)
 		end
 
-		wrapped = anchored_inferrable_term(anchor, unanchored_wrapped)
+		wrapped = anchored_inferrable_term(span, unanchored_wrapped)
 	end
 	evaluator.typechecker_state:exit_block()
 
