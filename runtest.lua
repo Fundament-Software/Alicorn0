@@ -40,7 +40,6 @@ else
 	interpreter_argv = { [0] = "lua" }
 	argv = { [0] = "runtest.lua" }
 end
-local test_harness = true
 local print_src = false
 local print_ast = false
 local print_inferrable = false
@@ -52,8 +51,8 @@ local profile_file = ""
 -- "match", "infer" are currently implemented
 local profile_what = ""
 local reload_mode = false
-local test_single = false
-local test_name = ""
+---@type nil | string[]
+local explicit_tests = nil
 local print_usage = false
 local short_opts = {
 	["S"] = function(_opt_repr)
@@ -73,7 +72,10 @@ local short_opts = {
 	end,
 	["r:"] = function(opt_repr, arg)
 		reload_mode = true
-		test_name = arg
+		if explicit_tests == nil then
+			explicit_tests = {}
+		end
+		table.insert(explicit_tests, arg)
 	end,
 	["p:"] = function(opt_repr, arg)
 		profile_run = true
@@ -89,8 +91,10 @@ local short_opts = {
 		profile_what = subargs[2] or "match"
 	end,
 	["T:"] = function(opt_repr, arg)
-		test_single = true
-		test_name = arg
+		if explicit_tests == nil then
+			explicit_tests = {}
+		end
+		table.insert(explicit_tests, arg)
 	end,
 	["?"] = function(_opt_repr)
 		print_usage = true
@@ -166,6 +170,14 @@ if profile_run then
 end
 
 local prelude = "prelude.alc"
+
+---@type {[string]: true}
+local explicit_test_set = {}
+if explicit_tests then
+	for _, explicit_test in ipairs(explicit_tests) do
+		explicit_test_set[explicit_test] = true
+	end
+end
 
 ---@enum failurepoint
 local failurepoint = {
@@ -504,78 +516,75 @@ local function perform_test(file, completion, env)
 end
 
 if reload_mode then
+	---@cast explicit_tests -nil
 	while true do
-		print("Loading " .. test_name)
-		evaluator.typechecker_state:speculate(function()
-			local shadowed, test_env = env:enter_block(terms.block_purity.effectful)
-			local ok, test_expr, test_env = load_alc_file(test_name, test_env, print)
-
-			if ok then
-				---@cast test_expr anchored_inferrable
-				---@cast test_env Environment
-				local test_env, test_expr, _ = test_env:exit_block(test_expr, shadowed)
-
-				local ok = execute_alc_file(test_expr, print, test_env)
-			end
-
-			return false
-		end)
-
-		print("Continue? y/n: ")
-		if io.read(1) == "n" then
-			return
-		end
-	end
-end
-
-if test_harness then
-	local test_list_file, err = io.open("testlist.json")
-	if not test_list_file then
-		error(err)
-	end
-	local test_list, pos, err = json.decode(test_list_file:read("a"), 1, nil)
-	---@cast test_list table
-
-	if err ~= nil then
-		print("Couldn't decode JSON describing tests! " .. tostring(err))
-		return
-	end
-
-	---@type { [string]: string }
-	local logs = {}
-	local total = 0
-	local failures = {}
-
-	for file, completion in pairs(test_list) do
-		if (not test_single) or (test_single and file == test_name) then
-			total = total + 1
-
-			-- We do not attempt to capture errors here because no test should cause an internal compiler error, only recoverable errors.
-			-- If a shadowing error occurs, it means a test caused an internal compiler error that was captured by the syntax that left
-			-- the tests in a bad state.
+		for _, test_path in ipairs(explicit_tests) do
+			print("Loading " .. test_path)
 			evaluator.typechecker_state:speculate(function()
-				local ok, log = perform_test(file, completion, env)
+				local shadowed, test_env = env:enter_block(terms.block_purity.effectful)
+				local ok, test_expr, test_env = load_alc_file(test_path, test_env, print)
 
-				logs[file] = log
-				if not ok then
-					U.append(failures, file)
+				if ok then
+					---@cast test_expr anchored_inferrable
+					---@cast test_env Environment
+					local test_env, test_expr, _ = test_env:exit_block(test_expr, shadowed)
+
+					local ok = execute_alc_file(test_expr, print, test_env)
 				end
 
 				return false
 			end)
-		end
-	end
 
-	if #failures == 0 then
-		io.write("All " .. tostring(total) .. " tests passed!\n")
-	else
-		io.write(tostring(total - #failures) .. " out of " .. tostring(total) .. " tests passed. Failures:\n")
-		for _, v in ipairs(failures) do
-			io.write("- " .. v .. "\n")
+			print("Continue? y/n: ")
+			if io.read(1) == "n" then
+				return
+			end
 		end
 	end
+end
+
+local test_list_file, err = io.open("testlist.json")
+if not test_list_file then
+	error(err)
+end
+local test_list, pos, err = json.decode(test_list_file:read("a"), 1, nil)
+---@cast test_list table
+
+if err ~= nil then
+	print("Couldn't decode JSON describing tests! " .. tostring(err))
+	return
+end
+
+---@type { [string]: string }
+local logs = {}
+local total = 0
+local failures = {}
+
+for test_path, completion in pairs(test_list) do
+	if explicit_tests == nil or explicit_test_set[test_path] then
+		total = total + 1
+
+		-- We do not attempt to capture errors here because no test should cause an internal compiler error, only recoverable errors.
+		-- If a shadowing error occurs, it means a test caused an internal compiler error that was captured by the syntax that left
+		-- the tests in a bad state.
+		evaluator.typechecker_state:speculate(function()
+			local ok, log = perform_test(test_path, completion, env)
+
+			logs[test_path] = log
+			if not ok then
+				U.append(failures, test_path)
+			end
+
+			return false
+		end)
+	end
+end
+
+if #failures == 0 then
+	io.write("All " .. tostring(total) .. " tests passed!\n")
 else
-	local env, bound_expr, purity = env:exit_block(expr, prelude_env)
-
-	execute_alc_file(bound_expr, print)
+	io.write(tostring(total - #failures) .. " out of " .. tostring(total) .. " tests passed. Failures:\n")
+	for _, v in ipairs(failures) do
+		io.write("- " .. v .. "\n")
+	end
 end
