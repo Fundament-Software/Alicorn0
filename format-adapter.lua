@@ -53,18 +53,19 @@ end
 local lispy_indent = "\t"
 local lispy_break = 100
 ---@param code ConstructedSyntax
----@param d integer?
+---@param print_spans boolean?
+---@param depth integer?
 ---@return string
-local function lispy_print(code, d)
-	if d == nil then
-		d = 0
+local function lispy_print(code, print_spans, depth)
+	if depth == nil then
+		depth = 0
 	end
 	local start_anchor_pfx = ""
-	if code.span ~= nil then
+	if print_spans and code.span ~= nil then
 		start_anchor_pfx = "#|" .. tostring(code.span.start) .. "…|# "
 	end
 	local stop_anchor_sfx = ""
-	if code.span.start ~= code.span.stop then
+	if print_spans and code.span.start ~= code.span.stop then
 		stop_anchor_sfx = " #|…" .. tostring(code.span.stop) .. "|#"
 	end
 	if code.accepters.Pair then
@@ -76,7 +77,7 @@ local function lispy_print(code, d)
 		local t = 0
 		while continue do
 			n = n + 1
-			a[n] = lispy_print(hd, d + 1)
+			a[n] = lispy_print(hd, print_spans, depth + 1)
 			t = t + #a[n]
 			t = t + 1
 			if tl.accepters.Pair then
@@ -87,7 +88,7 @@ local function lispy_print(code, d)
 			end
 		end
 		local pfx = ""
-		for i = 1, d do
+		for i = 1, depth do
 			pfx = pfx .. lispy_indent
 		end
 		local pfx1 = pfx .. lispy_indent
