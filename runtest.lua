@@ -41,8 +41,11 @@ else
 	argv = { [0] = "runtest.lua" }
 end
 local test_harness = true
+---@type nil | string[]
+local print_file_ast = nil
 local print_src = false
 local print_ast = false
+local print_ast_spans = true
 local print_inferrable = false
 local print_typed = false
 local print_evaluated = false
@@ -98,8 +101,20 @@ local short_opts = {
 }
 local long_opts = {
 	["help"] = "?",
+	["print-file-ast:"] = function(_opt_repr, path)
+		if print_file_ast == nil then
+			print_file_ast = {}
+		end
+		table.insert(print_file_ast, path)
+	end,
 	["print-src"] = "S",
 	["print-ast"] = "f",
+	["print-ast-spans"] = function(_opt_repr)
+		print_ast_spans = true
+	end,
+	["no-print-ast-spans"] = function(_opt_repr)
+		print_ast_spans = false
+	end,
 	["print-inferrable"] = "s",
 	["print-typed"] = "t",
 	["print-evaluated"] = "v",
@@ -117,12 +132,16 @@ local first_operand = getopt(argv, short_opts, long_opts)
 
 if print_usage then
 	local usage = [=[Usage: %s [-Sfstv] [(-p|-P) <file>[,<what>]] [-T <test>]
+      --print-file-ast <path>
+          Show the AST generated from the source code of the provided file.
   -S, --print-source
           Print the Alicorn source code about to be tested.
           (mnemonic: Source)
   -f, --print-ast
           Show the AST generated from the source code.
           (mnemonic: format.read)
+      --[no-]print-ast-spans
+          Enable or disable span information when printing ASTs.
   -s, --print-inferrable
           Show the unchecked term. *
           (mnemonic: syntax:match)
@@ -177,6 +196,32 @@ local failurepoint = {
 	success = "success",
 }
 
+if print_file_ast ~= nil then
+	for _, src_path in ipairs(print_file_ast) do
+		---@diagnostic disable-next-line: no-unknown
+		local src_file, err
+		if src_path == "-" then
+			local ok
+			ok, src_file = pcall(io.input)
+			if not ok then
+				src_file, err = nil, src_file
+			end
+		else
+			src_file, err = io.open(src_path, "r")
+		end
+		if not src_file then
+			error(err)
+		end
+		local src = src_file:read("a")
+		local ok, code = pcall(format.read, src, src_path)
+		if not ok then
+			error(code)
+		end
+		io.write(format.lispy_print(code, print_ast_spans), "\n")
+	end
+	os.exit()
+end
+
 ---@param name string
 ---@param env Environment
 ---@param log function
@@ -212,7 +257,7 @@ local function load_alc_file(name, env, log)
 	checkpointTime2 = checkpointTime
 	if print_ast then
 		io.stderr:write("Printing raw AST\n")
-		io.stderr:write(format.lispy_print(code), "\n")
+		io.stderr:write(format.lispy_print(code, print_ast_spans), "\n")
 		io.stderr:write("End printing raw AST\n")
 	end
 
